@@ -18,4 +18,5 @@ if (isNaN(port)) {
 module.exports = {
   DOC_ROOT_DIR: path.resolve(process.env.DOC_ROOT_DIR),
   PORT: port,
+  PLATFORM_MODE: process.env.PLATFORM_MODE || 'auto'
 };

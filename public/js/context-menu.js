@@ -1,88 +1,91 @@
 // public/js/context-menu.js
-window.ContextMenu = {
-  activeMenu: null,
+window.ContextMenu = (function () {
+  let el = null;
+  let bound = false;
 
-  open(x, y, items) {
-    this.close();
-    if (!items || items.length === 0) return;
+  function handleOutsideClick(e) {
+    if (!el) return;
+    if (el.contains(e.target)) return; // click inside menu — ignore
+    close();
+  }
 
-    const menu = document.createElement('div');
-    menu.id = 'app-context-menu';
-    menu.className = 'bg-canvas border border-hairline rounded-lg shadow-lg py-1.5 min-w-[200px] fixed z-50 select-none';
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
+  function handleKey(e) {
+    if (e.key === 'Escape') close();
+  }
 
-    items.forEach((item) => {
-      if (item.divider) {
-        const div = document.createElement('div');
-        div.className = 'border-t border-hairline-soft my-1';
-        menu.appendChild(div);
-        return;
-      }
+  function handleScroll() {
+    close();
+  }
 
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `w-full text-left font-sans text-sm px-3 py-2 flex items-center space-x-2 transition ${
-        item.danger
-          ? 'text-error hover:bg-error/10'
-          : item.disabled
-            ? 'text-muted-soft cursor-not-allowed opacity-50'
-            : 'text-ink hover:bg-surface-card'
-      }`;
-
-      if (item.disabled) {
-        btn.disabled = true;
-      }
-
-      const iconSpan = document.createElement('span');
-      iconSpan.className = 'w-4 text-center flex-shrink-0 text-sm';
-      iconSpan.textContent = item.icon || '';
-      btn.appendChild(iconSpan);
-
-      const labelSpan = document.createElement('span');
-      labelSpan.className = 'truncate flex-1';
-      labelSpan.textContent = item.label || '';
-      btn.appendChild(labelSpan);
-
-      if (!item.disabled) {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          ContextMenu.close();
-          if (typeof item.action === 'function') {
-            item.action();
-          }
-        });
-      }
-
-      menu.appendChild(btn);
-    });
-
-    document.body.appendChild(menu);
-    this.activeMenu = menu;
-
-    // Adjust position if near right or bottom edge
-    const rect = menu.getBoundingClientRect();
-    const margin = 10;
-    if (rect.right > window.innerWidth - margin) {
-      menu.style.left = `${Math.max(margin, window.innerWidth - rect.width - margin)}px`;
+  function close() {
+    if (el) {
+      el.remove();
+      el = null;
     }
-    if (rect.bottom > window.innerHeight - margin) {
-      menu.style.top = `${Math.max(margin, window.innerHeight - rect.height - margin)}px`;
-    }
-  },
-
-  close() {
-    if (this.activeMenu) {
-      this.activeMenu.remove();
-      this.activeMenu = null;
+    if (bound) {
+      document.removeEventListener('mousedown', handleOutsideClick, true);
+      document.removeEventListener('keydown', handleKey, true);
+      window.removeEventListener('scroll', handleScroll, true);
+      bound = false;
     }
   }
-};
 
-// Global click & key listeners to close context menu
-window.addEventListener('click', () => ContextMenu.close());
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') ContextMenu.close();
-});
-window.addEventListener('scroll', () => ContextMenu.close(), true);
-window.addEventListener('resize', () => ContextMenu.close());
+  function open(x, y, items) {
+    close();
+    if (!items || items.length === 0) return;
+
+    el = document.createElement('div');
+    el.id = 'app-context-menu';
+    el.className = 'bg-surface-card border border-hairline-strong rounded-lg shadow-2xl py-1 min-w-[200px] fixed z-[500] select-none font-sans text-[14px]';
+    el.style.backgroundColor = '#1e2329';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+
+    items.forEach(item => {
+      if (item.divider) {
+        const d = document.createElement('div');
+        d.className = 'border-t border-hairline my-1';
+        el.appendChild(d);
+        return;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `w-full text-left font-sans text-[14px] px-4 py-2.5 flex items-center gap-2 transition-colors cursor-pointer ${
+        item.danger
+          ? 'text-danger hover:bg-danger/10'
+          : item.disabled
+            ? 'text-muted cursor-not-allowed opacity-50'
+            : 'text-body hover:bg-surface-elevated'
+      }`;
+      btn.innerHTML = `<span>${item.label}</span>`;
+      if (item.disabled) {
+        btn.disabled = true;
+      } else {
+        btn.addEventListener('click', () => {
+          close();
+          item.action?.();
+        });
+      }
+      el.appendChild(btn);
+    });
+
+    document.body.appendChild(el);
+
+    // Auto-flip near edges
+    const rect = el.getBoundingClientRect();
+    if (rect.right > window.innerWidth) el.style.left = (x - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight) el.style.top = (y - rect.height) + 'px';
+
+    // Attach listeners AFTER the current event loop so the right-click
+    // that opened the menu doesn't immediately trigger close.
+    // Using `mousedown` (not `click`) — fires earlier and catches all cases.
+    setTimeout(() => {
+      document.addEventListener('mousedown', handleOutsideClick, true);
+      document.addEventListener('keydown', handleKey, true);
+      window.addEventListener('scroll', handleScroll, true);
+      bound = true;
+    }, 0);
+  }
+
+  return { open, close };
+})();

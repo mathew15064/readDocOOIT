@@ -1,4 +1,4 @@
-# Current Phase: Phase 5 — UI/UX Polish & Claude Design System (Completed)
+# Current Phase: Phase 9 — Tooling, Docs & Final Polish (Completed)
 
 ### Phase Execution Progress
 - [x] **Phase 0 – Bootstrap**: Node + Express + SQLite + migrations.
@@ -15,11 +15,13 @@
   - [x] Inline web preview (XLSX / CSV / PDF / image / text).
   - [x] Scanner extension whitelist (removed .git + tool noise).
   - [x] Alpine null-safety fix (`x-if` + optional chaining).
+- [x] **Phase 8 – Multi-Option Opener + WSL-aware reveal + Modal UX**: Split-button opener (LibreOffice/Excel/OS default), per-platform `config/openers.json`, `PLATFORM_MODE` env override, WSL path handling (wslpath for /mnt, UNC / temp-copy for /home), Group Picker modal with search, Add Bookmark modal shows existing bookmarks as a table, z-index tier stack for nested modals, actions column responsive with labels hidden below xl.
+- [x] **Phase 9 – Tooling + Docs + Makefile**: `npm run shots` (20 Playwright screenshots), `scripts/verify-responsive.mjs` (7 viewports), Makefile with first-time setup + common tasks, README rewrite with install guide, screenshot workflow rule in WORKFLOW.md.
 
 ### Test Status
-- Unit: 48/48 pass
+- Unit: 51/51 pass
 - Integration: 20/20 pass
-- E2E (Playwright verify-task5): 6/6 pass
+- E2E (Playwright verify-task5 & verify-responsive): 7/7 viewports pass
 
 ### Active Blockers
 None.

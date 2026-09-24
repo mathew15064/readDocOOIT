@@ -2,9 +2,10 @@
 const express = require('express');
 const path = require('path');
 const logger = require('./middleware/request-logger');
+const openerRouter = require('./modules/opener/opener.routes');
 const errorHandler = require('./middleware/error-handler');
 
-const openRouter = require('./routes/open');
+
 const searchRouter = require('./routes/search');
 const bookmarkRouter = require('./routes/bookmark');
 const scanRouter = require('./routes/scan');
@@ -23,7 +24,7 @@ app.get('/health', (req, res) => {
 });
 
 // Register API routes
-app.use('/api', openRouter);
+app.use('/api', openerRouter);
 app.use('/api', searchRouter);
 app.use('/api', bookmarkRouter);
 app.use('/api', scanRouter);

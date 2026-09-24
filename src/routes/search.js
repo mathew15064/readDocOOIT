@@ -1,24 +1,39 @@
 // src/routes/search.js
 const express = require('express');
 const router = express.Router();
-const { searchDocuments, getModules, getVersions } = require('../modules/search');
+const { searchDocuments, getModules, getVersions, getDistinctVersions } = require('../modules/search');
 
 /**
  * GET /api/documents
- * Query params: q, module, only_latest, page, pageSize
+ * Query params: q, module, only_latest, page, pageSize, tagIds, versionNum, sort
  */
 router.get('/documents', (req, res) => {
   try {
-    const { q, module: moduleFilter, only_latest, page, pageSize, tagIds } = req.query;
+    const { q, module: moduleFilter, only_latest, page, pageSize, tagIds, versionNum, sort } = req.query;
     const result = searchDocuments({
       q: q || '',
       module: moduleFilter || '',
       only_latest: only_latest === 'true' || only_latest === '1',
       page: page || 1,
       pageSize: pageSize || 50,
-      tagIds: tagIds || null
+      tagIds: tagIds || null,
+      versionNum: versionNum || null,
+      sort: sort || 'name_asc'
     });
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/documents/versions/distinct
+ * Distinct list of version_num values
+ */
+router.get('/documents/versions/distinct', (req, res) => {
+  try {
+    const versions = getDistinctVersions();
+    res.json(versions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

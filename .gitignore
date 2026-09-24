@@ -9,6 +9,7 @@ data/*.txt
 coverage/
 test-results/
 playwright-report/
+screenshots/
 .DS_Store
 Thumbs.db
 *.log

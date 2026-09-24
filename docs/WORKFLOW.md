@@ -32,3 +32,15 @@ For EVERY task, you MUST follow this loop:
 - Hard-coding secrets/tokens/paths
 - Using `fs.readdirSync` / `fs.statSync` inside request handlers
 - Using `child_process.exec` / `execSync`
+
+## Screenshot + Audit Rule (MANDATORY after UI changes)
+
+Before declaring any UI task done:
+1. Run `npm run shots` — captures 20 screenshots into `screenshots/`
+2. Run `make verify-responsive` — 7-viewport audit (or `node scripts/verify-responsive.mjs`)
+3. Open `screenshots/` and visually confirm:
+   - All 7 viewports render without overflow
+   - All interaction flows open without page errors
+   - No text-on-text overlap, no clipped buttons
+
+Screenshots are the ONLY acceptable visual evidence. An LLM cannot "visually verify" a UI from code reading.

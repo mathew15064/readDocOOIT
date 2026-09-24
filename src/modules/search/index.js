@@ -10,8 +10,10 @@ const db = require('../../db');
  * @param {number} [options.page=1]
  * @param {number} [options.pageSize=50]
  * @param {string|Array<number>} [options.tagIds=null]
+ * @param {string|number} [options.versionNum=null]
+ * @param {string} [options.sort='name_asc']
  */
-function searchDocuments({ q = '', module = '', only_latest = false, page = 1, pageSize = 50, tagIds = null } = {}) {
+function searchDocuments({ q = '', module = '', only_latest = false, page = 1, pageSize = 50, tagIds = null, versionNum = null, sort = 'name_asc' } = {}) {
   const conditions = [];
   const params = {};
 
@@ -27,6 +29,11 @@ function searchDocuments({ q = '', module = '', only_latest = false, page = 1, p
 
   if (only_latest === true || only_latest === 'true' || only_latest === '1' || only_latest === 1) {
     conditions.push('is_latest = 1');
+  }
+
+  if (versionNum !== undefined && versionNum !== null && versionNum !== '' && !isNaN(Number(versionNum))) {
+    conditions.push('version_num = @versionNum');
+    params.versionNum = Number(versionNum);
   }
 
   let parsedTagIds = [];
@@ -57,11 +64,23 @@ function searchDocuments({ q = '', module = '', only_latest = false, page = 1, p
   params.limit = limit;
   params.offset = offset;
 
+  const sortMap = {
+    name_asc: 'file_name ASC',
+    name_desc: 'file_name DESC',
+    date_desc: 'version_date DESC',
+    date_asc: 'version_date ASC',
+    version_desc: 'version_num DESC',
+    version_asc: 'version_num ASC',
+    size_desc: 'file_size DESC',
+    size_asc: 'file_size ASC',
+  };
+  const orderBy = sortMap[sort] || 'file_name ASC';
+
   const dataStmt = db.prepare(`
     SELECT id, file_path, file_name, file_ext, file_size, mtime, version_num, version_date, module_path, doc_type, base_name, is_latest, indexed_at
     FROM documents
     ${whereClause}
-    ORDER BY is_latest DESC, version_num DESC NULLS LAST, file_name ASC
+    ORDER BY ${orderBy}
     LIMIT @limit OFFSET @offset
   `);
 
@@ -115,6 +134,19 @@ function getModules() {
 }
 
 /**
+ * Get distinct list of version numbers.
+ */
+function getDistinctVersions() {
+  const rows = db.prepare(`
+    SELECT DISTINCT version_num
+    FROM documents
+    WHERE version_num IS NOT NULL
+    ORDER BY version_num DESC
+  `).all();
+  return rows.map(r => r.version_num);
+}
+
+/**
  * Get all versions of a document (siblings with same base_name + module_path).
  * @param {number|string} documentId
  * @param {number|string|null} [currentId=null]
@@ -146,4 +178,4 @@ function getVersions(documentId, currentId = null) {
   };
 }
 
-module.exports = { searchDocuments, getModules, getVersions };
+module.exports = { searchDocuments, getModules, getVersions, getDistinctVersions };

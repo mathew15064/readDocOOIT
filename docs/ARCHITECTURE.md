@@ -97,3 +97,16 @@
   - Consequence: No more runtime null crashes from hidden subtrees.
 
 
+
+- **ADR — Dark Mode Migration (Binance-derived palette)**:
+  - **Context**: User spends >3 h/day in the app; cream canvas is bland and monospace body causes eye fatigue.
+  - **Decision**: Adopt a dark UI with Binance palette:
+    - Canvas `bg-canvas` #0b0e11
+    - Card `bg-surface-card` #1e2329
+    - Elevated `bg-surface-elevated` #2b3139
+    - Primary CTA `bg-primary` #fcd535 (yellow)
+    - Body font **Inter**; **JetBrains Mono** only for version numbers, module paths, file extensions, ASCII icons, and code snippets.
+    - Trading‑green `#0ecb81` → “LATEST” badges, trading‑red `#f6465d` → “OUTDATED” badges.
+    - Border radius 6–12 px, no shadows.
+    - Semantic colors only as tinted fills (e.g., `bg-success/15`) – never solid button backgrounds except destructive CTAs.
+  - **Consequence**: Dark UI reduces eye strain for long sessions, provides a clear visual hierarchy with a single yellow primary CTA, and maintains monospaced readability where needed.

@@ -187,15 +187,20 @@ router.post('/bookmark-items/:id/update-to-latest', async (req, res) => {
 router.get('/documents/:docId/bookmark-groups', (req, res) => {
   const { docId } = req.params;
   try {
-    const stmt = db.prepare(`
-      SELECT g.id as group_id, g.name as group_name, g.color
-      FROM bookmark_items i
-      JOIN bookmark_groups g ON i.group_id = g.id
-      WHERE i.document_id = ?
-      ORDER BY g.sort_order ASC, g.id ASC
-    `);
-    const groups = stmt.all(docId);
-    res.json(groups);
+    const items = db.prepare(`
+      SELECT 
+        bi.id AS item_id,
+        bi.note,
+        bi.created_at,
+        bg.id AS group_id,
+        bg.name AS group_name,
+        bg.color
+      FROM bookmark_items bi
+      JOIN bookmark_groups bg ON bg.id = bi.group_id
+      WHERE bi.document_id = ?
+      ORDER BY bi.created_at DESC
+    `).all(docId);
+    res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

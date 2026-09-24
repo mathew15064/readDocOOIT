@@ -1,0 +1,60 @@
+{
+  "openers": [
+    {
+      "id": "libre",
+      "label": "LibreOffice",
+      "icon": "[L]",
+      "platforms": {
+        "win32": {
+          "command": "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
+          "args": ["{file}"],
+          "pathStrategy": "native"
+        },
+        "wsl": {
+          "command": "/mnt/c/Program Files/LibreOffice/program/soffice.exe",
+          "args": ["{file}"],
+          "pathStrategy": "windows"
+        },
+        "linux": {
+          "command": "libreoffice",
+          "args": ["{file}"],
+          "pathStrategy": "native"
+        },
+        "darwin": {
+          "command": "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+          "args": ["{file}"],
+          "pathStrategy": "native"
+        }
+      }
+    },
+    {
+      "id": "excel",
+      "label": "Excel",
+      "icon": "[E]",
+      "platforms": {
+        "win32": {
+          "command": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+          "args": ["{file}"],
+          "pathStrategy": "native"
+        },
+        "wsl": {
+          "command": "/mnt/c/Program Files/Microsoft Office/root/Office16/EXCEL.EXE",
+          "args": ["{file}"],
+          "pathStrategy": "windows"
+        }
+      }
+    },
+    {
+      "id": "default",
+      "label": "OS Default",
+      "icon": "[>]",
+      "default": true,
+      "platforms": {
+        "win32":   { "command": null, "args": [], "pathStrategy": "native" },
+        "wsl":     { "command": null, "args": [], "pathStrategy": "native" },
+        "linux":   { "command": null, "args": [], "pathStrategy": "native" },
+        "darwin":  { "command": null, "args": [], "pathStrategy": "native" }
+      }
+    }
+  ]
+}

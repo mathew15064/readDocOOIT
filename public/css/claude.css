@@ -1,20 +1,21 @@
-/* Claude warm cream theme styles */
+/* Dark Mode global */
+* { font-variant-ligatures: none; }
 html, body {
   overflow: hidden;
   height: 100%;
 }
-
 body {
-  background-color: #faf9f5;
-  color: #141413;
+  background-color: #0b0e11;
+  color: #eaecef;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Custom scrollbar — Claude warm cream theme */
+/* Scrollbar — dark surface */
 .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: #e6dfd8; border-radius: 4px; }
-.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #dcd4cc; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #2b3139; border-radius: 4px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #3a4149; }
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #e6dfd8 transparent;
+  scrollbar-color: #2b3139 transparent;
 }
