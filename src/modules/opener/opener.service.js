@@ -37,7 +37,7 @@ async function openFile(filePath, env) {
 
   const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
   if (child && typeof child.on === 'function') {
-    child.on('error', () => {});
+    child.on('error', () => { });
   }
   if (child && typeof child.unref === 'function') {
     child.unref();
@@ -77,7 +77,7 @@ async function openWith(filePath, opener, env) {
   }
 
   const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
-  if (child && typeof child.on === 'function') child.on('error', () => {});
+  if (child && typeof child.on === 'function') child.on('error', () => { });
   if (child && typeof child.unref === 'function') child.unref();
 
   return { opened: true, openerId: opener.id, path: resolved };
@@ -104,19 +104,16 @@ async function revealInFolder(filePath, env) {
   let targetPath = resolved;
 
   if (isWin) {
-    // Native Windows — use explorer.exe /select,"<path>"
-    // Explorer requires the /select flag and the path to be ONE argument with a comma.
-    // We quote the path manually to survive spaces.
-    const fullArg = `/select,"${resolved}"`;
-
     return new Promise((resolve, reject) => {
-      const child = spawn('explorer.exe', [fullArg], {
+      // shell:true → Node routes through cmd.exe which handles Windows quoting correctly.
+      // cmd.exe strips the outer quotes and passes /select + path properly to Explorer.
+      const child = spawn(`explorer.exe /select,"${resolved}"`, {
         detached: true,
         stdio: 'ignore',
+        shell: true,
         windowsHide: true,
       });
-      // Explorer returns exit code 1 even on success — do NOT treat non-zero as failure.
-      child.on('error', (err) => reject(err));
+      child.on('error', reject);
       child.on('spawn', () => {
         child.unref();
         resolve({ revealed: true, path: resolved, targetPath: resolved, folder: path.dirname(resolved) });
