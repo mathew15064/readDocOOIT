@@ -1190,6 +1190,119 @@
     </div>
   </div>
 
+  <!-- [T] Document-scoped Tag Management Modal -->
+  <div x-show="showDocTagModal" @keydown.window.escape="showDocTagModal = false" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" style="display: none;">
+    <div class="bg-surface-card border border-hairline-strong w-full max-w-lg p-6 rounded-xl shadow-2xl z-[101] space-y-4 max-h-[80vh] flex flex-col" style="background-color: #1e2329;" @click.stop>
+
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-hairline pb-4 flex-shrink-0">
+        <div class="min-w-0 pr-4">
+          <h3 class="font-sans text-[18px] font-semibold text-white flex items-center space-x-2">
+            <span>[T] Manage Tags</span>
+          </h3>
+          <div class="text-[13px] font-medium text-body truncate mt-0.5" x-text="docTagDocName"></div>
+          <div class="text-[11px] font-mono text-muted truncate" :title="docTagDocPath" x-text="docTagDocPath"></div>
+        </div>
+        <button @click="showDocTagModal = false" class="text-muted hover:text-white text-xl font-bold flex-shrink-0">&times;</button>
+      </div>
+
+      <!-- Create new tag + assign -->
+      <div class="p-3 bg-surface-elevated border border-hairline rounded-lg space-y-2 flex-shrink-0">
+        <div class="text-xs font-semibold text-muted uppercase">Create and assign new tag</div>
+        <div class="flex items-center space-x-2">
+          <input 
+            type="text" 
+            placeholder="New tag name..." 
+            x-model="docTagNewName" 
+            @keydown.enter="createAndAssignDocTag()"
+            class="flex-1 bg-surface-card border border-hairline rounded-md px-3 py-1.5 text-xs text-body focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted" 
+          />
+          <input 
+            type="color" 
+            x-model="docTagNewColor" 
+            class="w-8 h-8 rounded-md border border-hairline bg-transparent cursor-pointer p-0.5" 
+            title="Choose color"
+          />
+          <button 
+            @click="createAndAssignDocTag()" 
+            class="px-3 py-1.5 bg-primary hover:bg-primary-active text-on-primary text-xs font-semibold rounded-md transition-colors">
+            Create + Assign
+          </button>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="relative flex-shrink-0">
+        <input 
+          type="text" 
+          placeholder="Search tags..." 
+          x-model="docTagSearch"
+          class="w-full bg-surface-elevated text-body font-sans text-[13px] h-9 pl-9 pr-3 rounded-lg border border-hairline focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 placeholder:text-muted transition"
+        />
+        <svg class="w-4 h-4 text-muted absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        </svg>
+      </div>
+
+      <!-- Assigned tags summary -->
+      <div class="flex items-center flex-wrap gap-1.5 px-1 flex-shrink-0">
+        <span class="text-xs text-muted font-semibold mr-1">Assigned:</span>
+        <template x-for="t in docTagAssigned()" :key="t.id">
+          <span 
+            class="text-[11px] font-medium px-2 py-0.5 rounded-sm inline-flex items-center space-x-1"
+            :style="`background-color: ${t.color}25; color: ${t.color}; border: 1px solid ${t.color}50;`">
+            <span x-text="t.name"></span>
+          </span>
+        </template>
+        <template x-if="docTagAssigned().length === 0">
+          <span class="text-[11px] text-muted italic">No tags assigned</span>
+        </template>
+      </div>
+
+      <!-- Tag checklist -->
+      <div class="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-1 pr-1">
+        <template x-for="tag in filteredDocTags()" :key="tag.id">
+          <label class="flex items-center justify-between gap-3 p-2.5 rounded-lg border transition cursor-pointer"
+            :class="isDocTagAssigned(tag.id) ? 'bg-surface-elevated border-primary/40' : 'bg-surface-card hover:bg-surface-elevated border-hairline'">
+            <div class="flex items-center space-x-2.5 min-w-0 flex-1">
+              <input 
+                type="checkbox" 
+                :checked="isDocTagAssigned(tag.id)"
+                @change="toggleDocTagFromModal(tag.id)"
+                class="w-4 h-4 rounded-sm bg-surface-elevated border-hairline text-primary focus:ring-0 flex-shrink-0" 
+              />
+              <span class="w-3 h-3 rounded-full flex-shrink-0" :style="`background-color: ${tag.color};`"></span>
+              <span class="text-[13px] font-medium text-body truncate" x-text="tag.name"></span>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span class="text-[11px] text-muted" x-text="`${tag.doc_count || 0} doc(s)`"></span>
+              <template x-if="isDocTagAssigned(tag.id)">
+                <span class="text-primary font-bold text-[11px]">[v]</span>
+              </template>
+            </div>
+          </label>
+        </template>
+
+        <template x-if="filteredDocTags().length === 0 && allTags.length === 0">
+          <div class="text-center py-8 text-muted text-xs">No tags created yet. Create one above.</div>
+        </template>
+        <template x-if="filteredDocTags().length === 0 && allTags.length > 0">
+          <div class="text-center py-8 text-muted text-xs">No tags match "<span class="text-body" x-text="docTagSearch"></span>".</div>
+        </template>
+      </div>
+
+      <!-- Footer -->
+      <div class="flex items-center justify-between pt-3 border-t border-hairline flex-shrink-0">
+        <button 
+          @click="showDocTagModal = false; openTagManageModal();" 
+          class="text-[12px] text-primary hover:underline font-medium">
+          Manage all tags globally →
+        </button>
+        <button @click="showDocTagModal = false" class="px-5 py-2 bg-surface-elevated text-body font-sans text-[14px] font-medium rounded-md border border-hairline hover:bg-surface-card transition-colors">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- [#] Bookmark Group Full View Modal (Sub-Task 5.4 - ADR-009 / ADR-020) -->
   <div x-show="showGroupDetailModal" @keydown.window.escape="showGroupDetailModal = false" class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" style="display: none;">
     <div class="bg-surface-card border border-hairline-strong w-full max-w-7xl p-6 rounded-xl shadow-2xl z-[201] space-y-4 max-h-[90vh] flex flex-col" style="background-color: #1e2329;" @click.stop>
@@ -1731,6 +1844,15 @@
         editingTagName: '',
         editingTagColor: '#6366f1',
 
+        // Document-scoped Tag Modal State (Task 8.16.2)
+        showDocTagModal: false,
+        docTagDocId: null,
+        docTagDocName: '',
+        docTagDocPath: '',
+        docTagSearch: '',
+        docTagNewName: '',
+        docTagNewColor: '#6366f1',
+
         // Modals
         showAddBookmarkModal: false,
         showManageGroupModal: false,
@@ -2235,6 +2357,111 @@
         openTagManageModal() {
           this.loadTags();
           this.showTagManageModal = true;
+        },
+
+        // Task 8.16.2 — Document-scoped Tag Modal Methods
+        async openDocTagModal(doc) {
+          if (!doc || !doc.id) return;
+          this.docTagDocId = doc.id;
+          this.docTagDocName = doc.file_name || '';
+          this.docTagDocPath = doc.file_path || '';
+          this.docTagSearch = '';
+          this.docTagNewName = '';
+          this.docTagNewColor = '#6366f1';
+          this.showDocTagModal = true;
+          await this.loadTags();
+          // Ensure we know which tags are assigned to this doc
+          await this.loadModalDocTagsFor(doc.id);
+        },
+
+        async loadModalDocTagsFor(docId) {
+          try {
+            const res = await fetch(`/api/documents/${docId}/tags`);
+            if (res.ok) {
+              this.modalDocTags = await res.json();
+              this.modalDocId = docId;
+            }
+          } catch (e) {
+            console.error('Failed to load doc tags', e);
+            this.modalDocTags = [];
+          }
+        },
+
+        isDocTagAssigned(tagId) {
+          return this.modalDocTags.some(t => t.id === Number(tagId));
+        },
+
+        docTagAssigned() {
+          return this.modalDocTags;
+        },
+
+        filteredDocTags() {
+          const q = (this.docTagSearch || '').trim().toLowerCase();
+          if (!q) return this.allTags;
+          return this.allTags.filter(t => t.name.toLowerCase().includes(q));
+        },
+
+        async toggleDocTagFromModal(tagId) {
+          const docId = this.docTagDocId;
+          if (!docId) return;
+          const isAssigned = this.isDocTagAssigned(tagId);
+          try {
+            const res = await fetch(`/api/documents/${docId}/tags/${tagId}`, {
+              method: isAssigned ? 'DELETE' : 'POST'
+            });
+            if (res.ok) {
+              await this.loadModalDocTagsFor(docId);
+              // Refresh the main table so tag pills update
+              await this.loadDocuments();
+              await this.loadTags();
+            } else {
+              showToast('Failed to update tag', 'error');
+            }
+          } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+          }
+        },
+
+        async createAndAssignDocTag() {
+          const name = (this.docTagNewName || '').trim();
+          if (!name) {
+            showToast('Tag name is required', 'warning');
+            return;
+          }
+          const docId = this.docTagDocId;
+          if (!docId) return;
+
+          try {
+            // 1. Create tag
+            const createRes = await fetch('/api/tags', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, color: this.docTagNewColor })
+            });
+            const createData = await createRes.json();
+            if (!createRes.ok) {
+              showToast(createData.error || 'Failed to create tag', 'error');
+              return;
+            }
+
+            // 2. Assign to current doc
+            const assignRes = await fetch(`/api/documents/${docId}/tags/${createData.id}`, {
+              method: 'POST'
+            });
+            if (!assignRes.ok) {
+              showToast('Tag created but assign failed', 'warning');
+            } else {
+              showToast(`Tag "${name}" created and assigned`, 'success');
+            }
+
+            this.docTagNewName = '';
+            this.docTagNewColor = '#6366f1';
+            await this.loadTags();
+            await this.loadModalDocTagsFor(docId);
+            await this.loadDocuments();
+          } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+          }
         },
 
         async createTagGlobal() {
@@ -2754,12 +2981,8 @@
             { label: '[#] Copy file name', action: () => this.copyToClipboard(doc.file_name, 'File name copied') },
             { divider: true },
             { 
-              label: '[#] Manage Tags', 
-              action: () => {
-                this.modalDocId = doc.id;
-                this.loadModalDocTags();
-                this.showTagManageModal = true;
-              } 
+              label: '[T] Manage Tags', 
+              action: () => this.openDocTagModal(doc)
             }
           ];
           window.ContextMenu.open(e.clientX, e.clientY, items);

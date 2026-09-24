@@ -96,59 +96,82 @@ async function revealInFolder(filePath, env) {
   if (!stat.isFile()) throw new Error('NOT_A_FILE');
 
   const isWin = process.platform === 'win32';
+  const isMac = process.platform === 'darwin';
   const isWSL = process.platform === 'linux' && (() => {
     try { return /microsoft/i.test(fs.readFileSync('/proc/version', 'utf8')); } catch { return false; }
   })();
-  const isMac = process.platform === 'darwin';
 
-  let cmd, args, targetPath = resolved;
+  let targetPath = resolved;
 
   if (isWin) {
-    // Native Windows
-    cmd = 'explorer.exe';
-    args = [`/select,${resolved}`];
-    targetPath = resolved;
-  } else if (isWSL) {
+    // Native Windows — use explorer.exe /select,"<path>"
+    // Explorer requires the /select flag and the path to be ONE argument with a comma.
+    // We quote the path manually to survive spaces.
+    const fullArg = `/select,"${resolved}"`;
+
+    return new Promise((resolve, reject) => {
+      const child = spawn('explorer.exe', [fullArg], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      // Explorer returns exit code 1 even on success — do NOT treat non-zero as failure.
+      child.on('error', (err) => reject(err));
+      child.on('spawn', () => {
+        child.unref();
+        resolve({ revealed: true, path: resolved, targetPath: resolved, folder: path.dirname(resolved) });
+      });
+    });
+  }
+
+  if (isWSL) {
     const mountMatch = resolved.match(/^\/mnt\/([a-z])\/(.*)$/);
+    let cmd, args;
 
     if (mountMatch) {
-      // File on Windows drive: /mnt/c/... → C:\...
       try {
         const winPath = execSync(`wslpath -w "${resolved}"`, { encoding: 'utf8' }).trim();
         cmd = 'explorer.exe';
-        args = [`/select,${winPath}`];
+        args = [`/select,"${winPath}"`];
         targetPath = winPath;
-      } catch (e) {
+      } catch {
         throw new Error('PATH_CONVERT_FAILED');
       }
     } else {
-      // File on WSL native filesystem (/home/*, /root/*, /opt/*, etc.)
-      // Use UNC path: \\wsl.localhost\<distro>\<path>
-      // Note: /select does NOT work with UNC paths — use the plain folder path.
+      // WSL native file — open parent folder via UNC path
       const distro = (process.env.WSL_DISTRO_NAME || 'Ubuntu').trim();
       const parentDir = path.dirname(resolved);
-      // Strip leading / from path before joining with UNC prefix
-      const rel = parentDir.replace(/^\//, '');
-      // Convert / to \ for Windows UNC
-      const uncPath = `\\\\wsl.localhost\\${distro}\\${rel.replace(/\//g, '\\')}`;
-
+      const rel = parentDir.replace(/^\//, '').replace(/\//g, '\\');
+      const uncPath = `\\\\wsl.localhost\\${distro}\\${rel}`;
       cmd = 'explorer.exe';
       args = [uncPath];
       targetPath = uncPath;
     }
-  } else if (isMac) {
-    cmd = 'open';
-    args = ['-R', resolved];
-  } else {
-    // Plain Linux
-    cmd = 'xdg-open';
-    args = [path.dirname(resolved)];
+
+    return new Promise((resolve, reject) => {
+      const child = spawn(cmd, args, {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.on('error', (err) => reject(err));
+      child.on('spawn', () => {
+        child.unref();
+        resolve({ revealed: true, path: resolved, targetPath, folder: path.dirname(resolved) });
+      });
+    });
   }
 
-  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
-  child.unref();
+  if (isMac) {
+    const child = spawn('open', ['-R', resolved], { detached: true, stdio: 'ignore' });
+    child.unref();
+    return { revealed: true, path: resolved, targetPath: resolved, folder: path.dirname(resolved) };
+  }
 
-  return { revealed: true, path: resolved, targetPath, folder: path.dirname(resolved) };
+  // Plain Linux
+  const child = spawn('xdg-open', [path.dirname(resolved)], { detached: true, stdio: 'ignore' });
+  child.unref();
+  return { revealed: true, path: resolved, targetPath: path.dirname(resolved), folder: path.dirname(resolved) };
 }
 
 module.exports = { openFile, openWith, revealInFolder };

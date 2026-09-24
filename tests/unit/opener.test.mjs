@@ -11,7 +11,12 @@ process.env.DOC_ROOT_DIR = process.env.DOC_ROOT_DIR || process.cwd();
 process.env.PORT = process.env.PORT || '3081';
 
 const cp = require('child_process');
-const mockSpawn = vi.fn(() => ({ on: vi.fn(), unref: vi.fn() }));
+const mockSpawn = vi.fn(() => ({
+  on: vi.fn((event, cb) => {
+    if (event === 'spawn') setTimeout(cb, 0);
+  }),
+  unref: vi.fn()
+}));
 cp.spawn = mockSpawn;
 
 const { openFile, revealInFolder } = require('../../src/modules/opener/opener.service.js');
