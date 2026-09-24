@@ -1,0 +1,30 @@
+{
+  "name": "doc-reader",
+  "version": "0.1.0",
+  "description": "Local document reader and bookmark manager",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "migrate": "node scripts/migrate.js",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "playwright test"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^9.5.0",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "p-limit": "^4.0.0",
+    "pino": "^9.2.0",
+    "pino-http": "^10.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0",
+    "supertest": "^7.0.0",
+    "vitest": "^2.0.0"
+  }
+}

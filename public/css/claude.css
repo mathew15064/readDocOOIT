@@ -1,0 +1,20 @@
+/* Claude warm cream theme styles */
+html, body {
+  overflow: hidden;
+  height: 100%;
+}
+
+body {
+  background-color: #faf9f5;
+  color: #141413;
+}
+
+/* Custom scrollbar — Claude warm cream theme */
+.scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #e6dfd8; border-radius: 4px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #dcd4cc; }
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #e6dfd8 transparent;
+}

@@ -1,0 +1,2460 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full overflow-hidden">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Document Reader & Bookmark Manager</title>
+  <meta name="description" content="Local document reader, version search, and bookmark group manager." />
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Tailwind CDN & Configuration -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            canvas: '#faf9f5',
+            'surface-soft': '#f5f0e8',
+            'surface-card': '#efe9de',
+            'surface-cream-strong': '#e8e0d2',
+            'surface-dark': '#181715',
+            'surface-dark-elevated': '#252320',
+            'surface-dark-soft': '#1f1e1b',
+            primary: { DEFAULT: '#cc785c', active: '#a9583e', disabled: '#e6dfd8' },
+            ink: '#141413',
+            body: { DEFAULT: '#3d3d3a', strong: '#252523' },
+            muted: { DEFAULT: '#6c6a64', soft: '#8e8b82' },
+            hairline: { DEFAULT: '#e6dfd8', soft: '#ebe6df' },
+            'on-primary': '#ffffff',
+            'on-dark': { DEFAULT: '#faf9f5', soft: '#a09d96' },
+            teal: '#5db8a6',
+            amber: '#e5a55a',
+            success: '#5db872',
+            warning: '#d4a017',
+            error: '#c64545',
+          },
+          fontFamily: {
+            display: ['"Cormorant Garamond"', '"Tiempos Headline"', 'Garamond', 'serif'],
+            sans: ['StyreneB', 'Inter', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          borderRadius: {
+            xs: '4px', sm: '6px', md: '8px', lg: '12px', xl: '16px',
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="/css/claude.css">
+  <!-- Toast JS -->
+  <script src="/js/toast.js"></script>
+  <!-- Context Menu JS -->
+  <script src="/js/context-menu.js"></script>
+  <!-- Alpine.js CDN -->
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="h-full bg-canvas text-ink overflow-hidden flex flex-col font-sans" x-data="docApp()" x-init="initApp()">
+
+  <!-- Top Navigation Bar -->
+  <header class="flex-shrink-0 border-b border-hairline bg-canvas px-6 py-3">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-ink text-base shadow-sm border border-hairline flex-shrink-0">
+        📚
+      </div>
+      <div class="min-w-0">
+        <h1 class="font-display text-2xl text-ink">Doc Reader</h1>
+        <p class="font-sans text-xs text-muted">Local Document Indexer & Version Manager</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap">
+      <button @click="triggerSync()" class="px-3 py-1.5 bg-primary hover:bg-primary-active text-on-primary text-xs font-medium rounded-xl transition flex items-center space-x-1.5 shadow-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        <span>Git Sync</span>
+      </button>
+
+      <button @click="openRescanModal()" class="px-3 py-1.5 bg-success hover:bg-success text-on-primary text-xs font-medium rounded-xl transition flex items-center space-x-1.5 shadow-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        <span>Rescan Repo</span>
+      </button>
+
+      <button @click="openTagManageModal()" class="px-3 py-1.5 bg-canvas hover:bg-surface-card text-muted-soft text-xs font-medium rounded-xl transition flex items-center space-x-1.5 border border-surface-soft">
+        <span>🏷️ Tags</span>
+        <span class="bg-primary text-on-primary text-[11px] px-2 py-0.2 rounded-full font-bold" x-text="allTags.length">0</span>
+      </button>
+
+      <button @click="showBookmarks = !showBookmarks" class="px-3 py-1.5 bg-canvas hover:bg-surface-card text-muted-soft text-xs font-medium rounded-xl transition flex items-center space-x-1.5 border border-surface-soft">
+        <span>🔖 Groups</span>
+        <span class="bg-primary text-on-primary text-[11px] px-2 py-0.2 rounded-full font-bold" x-text="bookmarkGroups.length">0</span>
+        <template x-if="outdatedCount > 0">
+          <span class="bg-orange-500/20 text-orange-400 border border-orange-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold" x-text="`⚠️ ${outdatedCount}`" title="Outdated bookmarks"></span>
+        </template>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Split Layout -->
+  <div class="flex flex-1 min-h-0 overflow-hidden">
+    
+    <!-- Left Column: Search & Document Table -->
+    <main class="flex-1 min-w-0 flex flex-col p-4 md:p-6 space-y-4 overflow-hidden">
+
+      <!-- Filters & Search Bar Toolbar -->
+      <div class="bg-canvas border border-hairline shadow-sm p-4 rounded-2xl flex-shrink-0">
+        <div class="flex flex-wrap items-center gap-3">
+          <!-- Search input with 300ms debounce -->
+          <div class="relative flex-1 min-w-[200px]">
+            <input 
+              id="search-input"
+              type="text" 
+              placeholder="Search by filename, base name, version, or type..." 
+              class="w-full bg-canvas rounded-xl px-4 py-2.5 pl-10 text-muted-soft placeholder-muted-soft focus:outline-none focus:ring-2 focus:ring-primary text-sm transition"
+              x-model="query" 
+              @input.debounce.300="loadDocuments()" 
+            />
+            <svg class="w-4 h-4 text-muted-soft absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+
+          <!-- Module Selector -->
+          <div class="w-full sm:w-56">
+            <select 
+              id="module-filter"
+              class="w-full bg-canvas rounded-xl px-3 py-2.5 text-muted-soft text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              x-model="selectedModule" 
+              @change="loadDocuments()">
+              <option value="">All Modules</option>
+              <template x-for="mod in modules" :key="mod">
+                <option :value="mod" x-text="mod"></option>
+              </template>
+            </select>
+          </div>
+
+          <!-- Tags Multi-Select Dropdown (Sub-Task 4.5) -->
+          <div class="relative w-full sm:w-48" @click.outside="showTagFilterDropdown = false">
+            <button 
+              id="tag-filter-button"
+              type="button"
+              @click="showTagFilterDropdown = !showTagFilterDropdown" 
+              class="w-full bg-canvas rounded-xl px-3 py-2.5 text-muted-soft text-sm focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-between text-left">
+              <span class="truncate" x-text="selectedTagIds.length === 0 ? 'All Tags' : `Tags (${selectedTagIds.length})`"></span>
+              <svg class="w-4 h-4 text-muted-soft ml-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            
+            <div 
+              x-show="showTagFilterDropdown" 
+              x-transition
+              class="absolute top-full left-0 mt-1 w-64 bg-canvas border border-surface-soft rounded-xl shadow-2xl p-2.5 z-30 max-h-60 overflow-y-auto space-y-1"
+              style="display: none;">
+              <div class="flex items-center justify-between pb-1.5 border-b border-surface-soft text-xs">
+                <span class="text-muted-soft font-medium">Filter by tags (OR)</span>
+                <button 
+                  x-show="selectedTagIds.length > 0" 
+                  @click="clearTagFilter()" 
+                  class="text-primary hover:text-primary-active text-[11px] font-medium">
+                  Clear
+                </button>
+              </div>
+              <template x-for="tag in allTags" :key="tag.id">
+                <label class="flex items-center space-x-2 px-2 py-1.5 hover:bg-surface-soft text-xs select-none">
+                  <input 
+                    type="checkbox" 
+                    :value="tag.id" 
+                    :checked="selectedTagIds.includes(tag.id)" 
+                    @change="toggleTagFilter(tag.id)"
+                    class="w-3.5 h-3.5 rounded bg-canvas border-surface-soft text-primary focus:ring-0" 
+                  />
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="`background-color: ${tag.color};`"></span>
+                  <span class="text-muted-soft truncate flex-1" x-text="tag.name"></span>
+                  <span class="text-[10px] text-muted-soft font-mono" x-text="`(${tag.doc_count || 0})`"></span>
+                </label>
+              </template>
+              <div x-show="allTags.length === 0" class="text-center py-2 text-muted-soft text-xs">
+                No tags available.
+              </div>
+            </div>
+          </div>
+
+          <!-- Only Latest Checkbox -->
+          <label class="flex items-center space-x-2 text-sm text-muted-soft cursor-pointer select-none px-2 py-1">
+            <input 
+              id="only-latest-checkbox"
+              type="checkbox" 
+              class="w-4 h-4 rounded bg-canvas border-surface-soft text-primary focus:ring-primary"
+              x-model="onlyLatest" 
+              @change="loadDocuments()" 
+            />
+            <span class="font-medium whitespace-nowrap">Only Latest Version</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Document Table Card -->
+      <div class="bg-canvas border border-hairline shadow-sm rounded-2xl overflow-hidden flex-1 min-h-0 flex flex-col">
+        <div class="px-5 py-3 border-b border-surface-soft/50 flex items-center justify-between flex-shrink-0">
+          <div class="flex items-center space-x-2">
+            <h2 class="font-semibold text-muted-soft text-sm">Documents List</h2>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-canvas text-muted-soft font-mono" x-text="`${totalDocs} total`"></span>
+          </div>
+        </div>
+
+        <div class="flex-1 min-h-0 overflow-auto scrollbar-thin">
+          <table class="w-full text-left text-sm text-muted-soft table-fixed">
+            <thead class="bg-surface-soft sticky top-0 z-10 text-muted-soft uppercase text-xs tracking-wider border-b border-surface-soft/50 backdrop-blur-sm">
+              <tr>
+                <th class="px-4 py-3 min-w-0">Document Name</th>
+                <th class="px-3 py-3 w-24 whitespace-nowrap">Version</th>
+                <th class="px-3 py-3 hidden xl:table-cell w-48">Module</th>
+                <th class="px-3 py-3 hidden lg:table-cell w-40">Tags</th>
+                <th class="px-2 py-3 hidden sm:table-cell w-16 text-center">Ext</th>
+                <th class="px-4 py-3 text-right w-28 whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-hairline-soft">
+              <template x-for="doc in documents" :key="doc.id">
+                <tr 
+                  class="hover:bg-surface-soft cursor-default"
+                  :class="draggedOverDocId === doc.id ? 'ring-2 ring-primary bg-primary/10' : ''"
+                  :style="draggedOverDocId === doc.id && draggingTagColor ? `box-shadow: inset 0 0 0 2px ${draggingTagColor};` : ''"
+                  @dragover.prevent="onDocDragOver($event, doc)"
+                  @dragleave="onDocDragLeave($event, doc)"
+                  @drop="onDocDrop($event, doc)"
+                  @contextmenu.prevent="openDocMenu($event, doc)"
+                  @dblclick="openPreviewModal(doc)">
+                  <td class="px-4 py-3 min-w-0 overflow-hidden">
+                    <div class="flex items-center space-x-2 min-w-0">
+                      <!-- Bookmark Pin Indicator -->
+                      <button 
+                        @click="openAddBookmarkModal(doc)" 
+                        class="focus:outline-none transition transform hover:scale-110 flex items-center space-x-0.5 flex-shrink-0"
+                        :title="(documentGroupMap[doc.id] && documentGroupMap[doc.id].length > 0) ? `In ${documentGroupMap[doc.id].length} group(s)` : 'Add to bookmark group'">
+                        <span 
+                          class="text-base"
+                          :style="(documentGroupMap[doc.id] && documentGroupMap[doc.id].length > 0) ? `filter: drop-shadow(0 0 4px ${documentGroupMap[doc.id][0].color});` : 'opacity: 0.35; filter: grayscale(1);'">
+                          📌
+                        </span>
+                        <template x-if="documentGroupMap[doc.id] && documentGroupMap[doc.id].length > 1">
+                          <span class="text-[10px] font-bold px-1 rounded-full bg-surface-card text-ink" x-text="documentGroupMap[doc.id].length"></span>
+                        </template>
+                      </button>
+
+                      <div class="min-w-0 flex-1 overflow-hidden">
+                        <div class="flex items-center space-x-1.5 min-w-0">
+                          <template x-if="doc.is_latest === 0">
+                            <span class="text-orange-400 text-xs cursor-help flex-shrink-0" title="Newer version available">⚠️</span>
+                          </template>
+                          <span class="font-sans text-sm text-ink truncate" @click="openVersionModal(doc.id, doc.id)" :title="`Click to view version history: ${doc.file_name}`" x-text="doc.file_name"></span>
+                        </div>
+                        <div class="text-xs text-muted-soft font-mono truncate" :title="doc.file_path" x-text="doc.file_path"></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 whitespace-nowrap">
+                    <div class="flex items-center space-x-1.5">
+                      <span class="font-mono text-xs px-2 py-0.5 rounded bg-canvas text-muted-soft" x-text="doc.version_num ? `V${doc.version_num}` : 'N/A'"></span>
+                      <template x-if="doc.is_latest === 1">
+                        <span class="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Latest</span>
+                      </template>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 text-xs text-muted-soft font-mono truncate hidden xl:table-cell" :title="doc.module_path" x-text="doc.module_path"></td>
+                  <td class="px-3 py-3 hidden lg:table-cell">
+                    <div class="flex items-center flex-wrap gap-1">
+                      <template x-for="tag in (doc.tags || []).slice(0, 3)" :key="tag.id">
+                        <span 
+                          @click.stop="toggleTagFilter(tag.id)" 
+                          class="text-[11px] font-medium px-2 py-0.5 rounded-full cursor-pointer transition hover:opacity-80 inline-flex items-center" 
+                          :style="`background-color: ${tag.color}25; color: ${tag.color}; border: 1px solid ${tag.color}50;`" 
+                          :title="`Filter by tag: ${tag.name}`"
+                          x-text="tag.name">
+                        </span>
+                      </template>
+                      <template x-if="(doc.tags || []).length > 3">
+                        <span 
+                          class="text-[10px] text-muted-soft font-mono px-1.5 py-0.5 rounded bg-canvas" 
+                          :title="(doc.tags || []).slice(3).map(t => t.name).join(', ')"
+                          x-text="`+${doc.tags.length - 3}`">
+                        </span>
+                      </template>
+                      <template x-if="!doc.tags || doc.tags.length === 0">
+                        <span class="text-xs text-muted-soft">—</span>
+                      </template>
+                    </div>
+                  </td>
+                  <td class="px-2 py-3 hidden sm:table-cell text-center">
+                    <span class="text-xs px-2 py-0.5 rounded bg-surface-card text-muted uppercase font-mono font-medium" x-text="doc.file_ext || 'file'"></span>
+                  </td>
+                  <td class="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+                    <!-- Preview in Browser Button -->
+                    <button @click="openPreviewModal(doc)" class="px-2 py-1 text-xs font-medium bg-canvas hover:bg-surface-card text-muted-soft border border-surface-soft rounded-lg transition inline-flex items-center" title="Preview file in browser">
+                      <span>👁️</span>
+                    </button>
+                    <!-- Single Open Button (OS default) -->
+                    <button @click="openDocument(doc)" class="px-2 py-1 text-xs font-medium bg-primary hover:bg-primary-active text-on-primary rounded-lg transition inline-flex items-center space-x-1 shadow-sm" title="Open with OS default application">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                      <span>Open</span>
+                    </button>
+                    <!-- Reveal in Folder Button -->
+                    <button @click="revealDocument(doc)" class="px-2 py-1 text-xs font-medium bg-canvas hover:bg-surface-card text-muted-soft border border-surface-soft rounded-lg transition inline-flex items-center" title="Reveal in folder">
+                      <span>📂</span>
+                    </button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="documents.length === 0">
+                <td colspan="6" class="px-6 py-12 text-center text-muted-soft">
+                  No documents found matching your criteria.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Overlay backdrop for sidebar on < 1024px -->
+    <div 
+      x-show="showBookmarks" 
+      @click="showBookmarks = false"
+      class="lg:hidden fixed inset-0 z-30 bg-surface-soft/80"
+      x-transition:enter="transition-opacity ease-linear duration-200"
+      x-transition:enter-start="opacity-0"
+      x-transition:enter-end="opacity-100"
+      x-transition:leave="transition-opacity ease-linear duration-200"
+      x-transition:leave-start="opacity-100"
+      x-transition:leave-end="opacity-0"
+      style="display: none;"></div>
+
+    <!-- Right Drawer: Bookmark Groups Sidebar -->
+    <aside 
+      x-show="showBookmarks" 
+      x-transition
+      class="fixed lg:static inset-y-0 right-0 z-40 lg:z-auto flex-shrink-0 w-80 xl:w-96 flex flex-col overflow-hidden border-l border-hairline bg-surface-soft p-4 lg:p-5 shadow-2xl lg:shadow-none"
+      style="display: none;">
+      <div class="pb-3 border-b border-surface-soft/50 space-y-2 flex-shrink-0">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold text-muted-soft flex items-center space-x-2">
+            <span>🔖 Bookmark Groups</span>
+          </h3>
+          <div class="flex items-center space-x-1.5">
+            <button @click="openNewGroupModal()" class="px-2 py-1 bg-primary hover:bg-primary-active text-on-primary text-xs font-medium rounded-lg transition flex items-center space-x-1 shadow-sm">
+              <span>+ New</span>
+            </button>
+            <button 
+              @click="showBookmarkFilter = !showBookmarkFilter" 
+              :class="getActiveFilterCount() > 0 ? 'bg-primary/20 text-primary border-primary/40' : (showBookmarkFilter ? 'bg-surface-card text-ink border-surface-soft' : 'bg-canvas hover:bg-surface-card text-muted-soft border-surface-soft')"
+              class="px-2 py-1 text-xs font-medium rounded-lg transition border flex items-center space-x-1" 
+              title="Filter bookmarks">
+              <span>🔍 Filter</span>
+              <template x-if="getActiveFilterCount() > 0">
+                <span class="bg-primary text-on-primary text-[10px] px-1 rounded-full font-bold" x-text="getActiveFilterCount()"></span>
+              </template>
+            </button>
+            <button @click="showBookmarks = false" class="text-muted-soft hover:text-ink text-lg p-0.5">&times;</button>
+          </div>
+        </div>
+
+        <!-- Collapsible Bookmark Filter Panel -->
+        <div x-show="showBookmarkFilter" x-transition class="p-3 bg-canvas space-y-2.5 text-xs">
+          <div>
+            <input 
+              type="text" 
+              placeholder="Search bookmarks by name or note..." 
+              class="w-full bg-canvas border border-surface-soft rounded-lg px-2.5 py-1.5 text-muted-soft text-xs focus:outline-none focus:ring-1 focus:ring-primary" 
+              x-model="bookmarkFilter.search" 
+            />
+          </div>
+          <div>
+            <select 
+              class="w-full bg-canvas border border-surface-soft rounded-lg px-2.5 py-1.5 text-muted-soft text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              x-model="bookmarkFilter.groupId">
+              <option value="">All Groups</option>
+              <template x-for="g in bookmarkGroups" :key="g.id">
+                <option :value="g.id" x-text="g.name"></option>
+              </template>
+            </select>
+          </div>
+          <div class="flex items-center justify-between pt-0.5">
+            <label class="flex items-center space-x-1.5 text-muted-soft cursor-pointer select-none">
+              <input type="checkbox" class="w-3.5 h-3.5 rounded bg-canvas border-surface-soft text-primary" x-model="bookmarkFilter.onlyOutdated" />
+              <span>Only outdated</span>
+            </label>
+            <label class="flex items-center space-x-1.5 text-muted-soft cursor-pointer select-none">
+              <input type="checkbox" class="w-3.5 h-3.5 rounded bg-canvas border-surface-soft text-primary" x-model="bookmarkFilter.onlyWithNotes" />
+              <span>Only with notes</span>
+            </label>
+          </div>
+          <div class="flex justify-end pt-1 border-t border-surface-soft/80">
+            <button @click="clearBookmarkFilter()" class="text-muted-soft hover:text-muted-soft text-[11px] underline">Clear</button>
+          </div>
+        </div>
+
+        <template x-if="outdatedCount > 0">
+          <div 
+            @click="bookmarkFilter.onlyOutdated = !bookmarkFilter.onlyOutdated; showBookmarkFilter = true" 
+            class="text-xs text-orange-400 font-medium cursor-pointer hover:underline flex items-center space-x-1.5 bg-orange-500/10 px-2.5 py-1 rounded-lg border border-orange-500/20 transition">
+            <span>⚠️</span>
+            <span x-text="`${outdatedCount} outdated bookmark(s)`"></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- Accordion Groups List -->
+      <div class="flex-1 min-h-0 overflow-auto scrollbar-thin space-y-3 pr-1 pt-3">
+        <template x-for="group in bookmarkGroups" :key="group.id">
+          <div x-show="isGroupVisible(group)" class="bg-canvas overflow-hidden transition">
+            <!-- Group Header -->
+            <div class="p-3 flex items-center justify-between hover:bg-surface-soft">
+              <div class="flex items-center space-x-2.5 flex-1 min-w-0">
+                <!-- Chevron for accordion -->
+                <span class="text-xs text-muted-soft font-mono cursor-pointer p-0.5 hover:text-ink" @click.stop="toggleGroup(group.id)" x-text="expandedGroups[group.id] ? '▼' : '▶'"></span>
+                <!-- Color Dot + Name + Badge (clicks to open Full View modal per 5.4) -->
+                <div class="flex items-center space-x-2 cursor-pointer flex-1 min-w-0" @click="openGroupDetailModal(group)">
+                  <span class="w-3 h-3 rounded-full flex-shrink-0" :style="`background-color: ${group.color}; box-shadow: 0 0 6px ${group.color}80;`"></span>
+                  <span class="text-sm font-medium text-muted-soft truncate" x-text="group.name" title="Click to view all items in group"></span>
+                  <span class="text-xs text-muted-soft font-mono" x-text="`(${group.item_count || 0})`"></span>
+                </div>
+              </div>
+
+              <!-- Options Button (⋯) -->
+              <div class="flex items-center space-x-1 relative">
+                <button 
+                  @click.stop="openManageGroupModal(group)" 
+                  class="p-1 text-muted-soft hover:text-ink rounded hover:bg-canvas text-xs transition" 
+                  title="Manage group">
+                  ⋯
+                </button>
+              </div>
+            </div>
+
+            <!-- Group Items (Accordion Body) -->
+            <div x-show="expandedGroups[group.id]" x-transition class="border-t border-surface-soft/80 bg-surface-soft space-y-1.5">
+              <template x-for="item in getFilteredGroupItems(group.id)" :key="item.item_id">
+                <div 
+                  class="p-2 rounded-lg hover:bg-surface-soft group text-xs border border-transparent hover:border-surface-soft/50"
+                  @contextmenu.prevent="openBookmarkMenu($event, item, group)">
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1 truncate mr-2">
+                      <div class="flex items-center space-x-1.5 truncate">
+                        <span x-show="item.is_outdated" class="text-orange-400 flex-shrink-0" title="Newer version available">⚠️</span>
+                        <span class="font-medium text-muted-soft truncate cursor-pointer hover:text-primary" @click="openVersionModal(item.document.id, item.document.id)" :title="`Click to view version history: ${item.document.file_name}`" x-text="item.document.file_name"></span>
+                        <span x-show="item.is_outdated" class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 flex-shrink-0">Outdated</span>
+                      </div>
+                      <div x-show="item.note" class="text-[10px] text-muted-soft italic truncate mt-0.5" x-text="item.note"></div>
+                    </div>
+                    <div class="flex items-center space-x-1 flex-shrink-0">
+                      <!-- Preview file icon -->
+                      <button 
+                        @click="openPreviewModal(item.document)" 
+                        class="text-muted-soft hover:text-muted-soft p-1" 
+                        title="Preview file in browser">
+                        👁️
+                      </button>
+                      <!-- Open file icon -->
+                      <button 
+                        @click="openDocument(item.document)" 
+                        class="text-primary hover:text-primary-active p-1" 
+                        title="Open file">
+                        📂
+                      </button>
+                      <!-- Remove item icon -->
+                      <button 
+                        @click="removeItemFromGroup(item.item_id, group.id)" 
+                        class="text-muted-soft hover:text-rose-400 p-1 font-bold text-sm leading-none" 
+                        title="Remove from group">
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Outdated sub-row -->
+                  <template x-if="item.is_outdated && item.latest_sibling">
+                    <div class="mt-1.5 pl-3 border-l-2 border-orange-500/40 text-[11px] text-muted-soft space-y-1">
+                      <div>
+                        <span>Newer: </span>
+                        <span class="font-mono text-muted-soft" x-text="`V${item.latest_sibling?.version_num ?? ''}${item.latest_sibling?.version_date ? '_' + item.latest_sibling.version_date.replace(/-/g, '') : ''}`"></span>
+                        <span x-show="item.latest_sibling?.version_date" x-text="` (${item.latest_sibling?.version_date})`"></span>
+                      </div>
+                      <div class="flex items-center space-x-2 pt-0.5">
+                        <button 
+                          @click.stop="openDocument(item.latest_sibling)" 
+                          class="px-2 py-0.5 bg-canvas hover:bg-canvas text-muted-soft text-[10px] font-medium rounded transition border border-surface-soft shadow-sm" 
+                          title="Open latest sibling document">
+                          Open Latest
+                        </button>
+                        <button 
+                          @click.stop="updateBookmarkToLatest(item.item_id, group.id)" 
+                          class="px-2 py-0.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 text-[10px] font-medium rounded transition border border-orange-500/30 shadow-sm" 
+                          title="Update bookmark to latest version">
+                          Update
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div x-show="getFilteredGroupItems(group.id).length === 0" class="text-[11px] text-muted-soft italic p-2 text-center">
+                <span x-show="!groupItems[group.id] || groupItems[group.id].length === 0">No files in this group.</span>
+                <span x-show="groupItems[group.id] && groupItems[group.id].length > 0">No files match the filter.</span>
+              </div>
+            </div>
+          </div>
+        </template>
+        <p x-show="bookmarkGroups.length === 0" class="text-sm text-muted-soft text-center py-6">No groups created yet. Click "+ New" above.</p>
+      </div>
+
+      <!-- Tags Section in Sidebar (Drag & Drop Tags source per 5.2) -->
+      <div class="mt-auto pt-3 border-t border-surface-soft/80 flex-shrink-0 space-y-2">
+        <div class="flex items-center justify-between cursor-pointer" @click="showSidebarTags = !showSidebarTags">
+          <div class="flex items-center space-x-1.5 text-xs font-semibold text-muted-soft">
+            <span>🏷️ Tags</span>
+            <span class="text-[10px] text-muted-soft font-mono" x-text="`(${allTags.length})`"></span>
+          </div>
+          <div class="flex items-center space-x-1">
+            <span class="text-[10px] text-muted-soft">drag to assign</span>
+            <span class="text-xs text-muted-soft font-mono" x-text="showSidebarTags ? '▼' : '▶'"></span>
+          </div>
+        </div>
+
+        <div x-show="showSidebarTags" x-transition class="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1 py-1 scrollbar-thin">
+          <template x-for="tag in allTags" :key="tag.id">
+            <div 
+              draggable="true" 
+              :data-tag-id="tag.id"
+              @dragstart="onTagDragStart($event, tag)"
+              @dragend="onTagDragEnd($event)"
+              @contextmenu.prevent="openTagMenu($event, tag)"
+              class="px-2 py-0.5 rounded-full text-xs font-medium cursor-grab active:cursor-grabbing select-none transition shadow-sm hover:scale-105 inline-flex items-center space-x-1 border"
+              :style="`background-color: ${tag.color}25; color: ${tag.color}; border-color: ${tag.color}60;`"
+              :title="`Drag onto any document row to assign (Right-click for options)`">
+              <span class="w-1.5 h-1.5 rounded-full" :style="`background-color: ${tag.color};`"></span>
+              <span x-text="tag.name"></span>
+            </div>
+          </template>
+          <div x-show="allTags.length === 0" class="text-[11px] text-muted-soft italic py-1">
+            No tags created yet.
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- 📌 "Add to Bookmark" Modal (ADR-009 / ADR-020: Never close on backdrop click) -->
+  <div x-show="showAddBookmarkModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-soft/80" style="display: none;">
+    <div class="bg-canvas border border-hairline shadow-2xl w-full max-w-md p-6 rounded-2xl space-y-5" @click.stop>
+      <div class="flex items-center justify-between border-b border-surface-soft pb-3">
+        <h3 class="text-lg font-bold text-muted-soft flex items-center space-x-2">
+          <span>📌 Add to Bookmark</span>
+        </h3>
+        <button @click="showAddBookmarkModal = false" class="text-muted-soft hover:text-ink text-xl font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-4">
+        <!-- File Info -->
+        <div class="p-3 bg-canvas">
+          <div class="text-xs text-muted-soft uppercase font-semibold">File</div>
+          <div class="text-sm font-medium text-muted-soft truncate mt-0.5" x-text="newBookmark.documentName"></div>
+        </div>
+
+        <!-- Group Selection -->
+        <div>
+          <label class="block text-xs font-semibold text-muted-soft uppercase mb-2">Choose a group:</label>
+          <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
+            <template x-for="g in bookmarkGroups" :key="g.id">
+              <label class="flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer"
+                :class="isDocInGroup(newBookmark.documentId, g.id) ? 'bg-canvas opacity-60 cursor-not-allowed' : (newBookmark.selectedGroupId === g.id && !newBookmark.createNew ? 'bg-primary/20 border-primary text-ink' : 'bg-canvas hover:border-surface-soft')">
+                <div class="flex items-center space-x-2.5">
+                  <input 
+                    type="radio" 
+                    name="bookmarkGroup" 
+                    :value="g.id" 
+                    :disabled="isDocInGroup(newBookmark.documentId, g.id)"
+                    @change="newBookmark.selectedGroupId = g.id; newBookmark.createNew = false"
+                    :checked="newBookmark.selectedGroupId === g.id && !newBookmark.createNew" 
+                    class="text-primary bg-canvas border-surface-soft" 
+                  />
+                  <span class="w-3 h-3 rounded-full flex-shrink-0" :style="`background-color: ${g.color};`"></span>
+                  <span class="text-sm font-medium" x-text="g.name"></span>
+                  <span class="text-xs text-muted-soft" x-text="`(${g.item_count || 0})`"></span>
+                </div>
+                <template x-if="isDocInGroup(newBookmark.documentId, g.id)">
+                  <span class="text-[10px] uppercase font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-md">Already in group</span>
+                </template>
+              </label>
+            </template>
+
+            <!-- Option: Create New Group -->
+            <label class="flex items-center space-x-2.5 p-2.5 rounded-xl border transition cursor-pointer"
+              :class="newBookmark.createNew ? 'bg-primary/20 border-primary text-ink' : 'bg-canvas hover:border-surface-soft'">
+              <input 
+                type="radio" 
+                name="bookmarkGroup" 
+                @change="newBookmark.createNew = true; newBookmark.selectedGroupId = null" 
+                :checked="newBookmark.createNew" 
+                class="text-primary bg-canvas border-surface-soft" 
+              />
+              <span class="text-sm font-medium text-primary">➕ Create new group</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Inline Create New Group Fields -->
+        <div x-show="newBookmark.createNew" x-transition class="p-3 bg-canvas space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-muted-soft mb-1">New Group Name</label>
+            <input 
+              type="text" 
+              placeholder="e.g. Shipper base calendar" 
+              class="w-full bg-canvas border border-surface-soft rounded-xl px-3 py-2 text-sm text-muted-soft focus:outline-none focus:ring-2 focus:ring-primary" 
+              x-model="newBookmark.newGroupName" 
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-muted-soft mb-1">Color</label>
+            <div class="flex items-center space-x-3">
+              <input 
+                type="color" 
+                class="w-10 h-10 p-0 border-0 rounded cursor-pointer bg-transparent" 
+                x-model="newBookmark.newGroupColor" 
+              />
+              <span class="text-xs font-mono text-muted-soft" x-text="newBookmark.newGroupColor"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Note Input (Optional) -->
+        <div>
+          <label class="block text-xs font-semibold text-muted-soft uppercase mb-1">Note (optional)</label>
+          <input 
+            type="text" 
+            placeholder="Add a reference note..." 
+            class="w-full bg-canvas border border-surface-soft rounded-xl px-3 py-2 text-sm text-muted-soft focus:outline-none focus:ring-2 focus:ring-primary" 
+            x-model="newBookmark.note" 
+          />
+        </div>
+      </div>
+
+      <div class="flex justify-end space-x-3 pt-4 border-t border-surface-soft">
+        <button @click="showAddBookmarkModal = false" class="px-4 py-2 bg-canvas hover:bg-canvas text-muted-soft text-sm font-medium rounded-xl">Cancel</button>
+        <button @click="submitAddBookmark()" class="px-4 py-2 bg-primary hover:bg-primary-active text-on-primary text-sm font-medium rounded-xl shadow-sm">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⚙️ "Manage Groups" Modal (ADR-009 / ADR-020: Never close on backdrop click) -->
+  <div x-show="showManageGroupModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-soft/80" style="display: none;">
+    <div class="bg-canvas border border-hairline shadow-2xl w-full max-w-md p-6 rounded-2xl space-y-4" @click.stop>
+      <div class="flex items-center justify-between border-b border-surface-soft pb-3">
+        <h3 class="text-lg font-bold text-muted-soft" x-text="editingGroup && editingGroup.id ? 'Edit Group' : 'Create Group'"></h3>
+        <button @click="showManageGroupModal = false" class="text-muted-soft hover:text-ink text-xl font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-muted-soft uppercase mb-1">Group Name</label>
+          <input 
+            type="text" 
+            class="w-full bg-canvas border border-surface-soft rounded-xl px-3 py-2 text-sm text-muted-soft focus:outline-none focus:ring-2 focus:ring-primary" 
+            x-model="manageForm.name" 
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-muted-soft uppercase mb-1">Color</label>
+          <div class="flex items-center space-x-3">
+            <input 
+              type="color" 
+              class="w-10 h-10 p-0 border-0 rounded cursor-pointer bg-transparent" 
+              x-model="manageForm.color" 
+            />
+            <span class="text-xs font-mono text-muted-soft" x-text="manageForm.color"></span>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-muted-soft uppercase mb-1">Description (optional)</label>
+          <textarea 
+            rows="2" 
+            class="w-full bg-canvas border border-surface-soft rounded-xl px-3 py-2 text-sm text-muted-soft focus:outline-none focus:ring-2 focus:ring-primary" 
+            x-model="manageForm.description">
+          </textarea>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-4 border-t border-surface-soft">
+        <template x-if="editingGroup && editingGroup.id">
+          <button @click="deleteCurrentGroup()" class="px-3 py-2 bg-error hover:bg-error/90 text-on-primary text-xs font-medium rounded-xl transition">
+            Delete Group
+          </button>
+        </template>
+        <template x-if="!editingGroup || !editingGroup.id">
+          <div></div>
+        </template>
+
+        <div class="flex space-x-2">
+          <button @click="showManageGroupModal = false" class="px-4 py-2 bg-canvas hover:bg-canvas text-muted-soft text-sm font-medium rounded-xl">Cancel</button>
+          <button @click="saveGroup()" class="px-4 py-2 bg-primary hover:bg-primary-active text-on-primary text-sm font-medium rounded-xl shadow-sm">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rescan Modal (ADR-009: Never close on backdrop click) -->
+  <div x-show="showRescanModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-soft/80" style="display: none;">
+    <div class="bg-canvas border border-hairline shadow-2xl w-full max-w-md p-6 rounded-2xl space-y-4" @click.stop>
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-bold text-muted-soft">Rescan Directory</h3>
+        <button @click="showRescanModal = false" class="text-muted-soft hover:text-ink text-xl font-bold">&times;</button>
+      </div>
+      
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-muted-soft uppercase mb-1">Root Directory Path</label>
+          <input 
+            id="rescan-root-dir"
+            type="text" 
+            class="w-full bg-canvas border border-surface-soft rounded-xl px-3 py-2 text-sm text-muted-soft focus:outline-none focus:ring-2 focus:ring-primary" 
+            x-model="scanRootDir" 
+          />
+        </div>
+      </div>
+
+      <div class="flex justify-end space-x-3 pt-4 border-t border-surface-soft">
+        <button @click="showRescanModal = false" class="px-4 py-2 bg-canvas hover:bg-canvas text-muted-soft text-sm font-medium rounded-xl">Cancel</button>
+        <button @click="executeScan()" class="px-4 py-2 bg-success hover:bg-success text-on-primary text-sm font-medium rounded-xl shadow-sm">Start Scan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📄 Version History Modal (ADR-009 / ADR-020: Never close on backdrop click) -->
+  <div x-show="showVersionModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-soft/80" style="display: none;">
+    <div class="bg-canvas border border-hairline shadow-2xl w-full max-w-2xl p-6 rounded-2xl space-y-4 max-h-[90vh] flex flex-col" @click.stop>
+      <div class="flex items-center justify-between border-b border-surface-soft pb-3 flex-shrink-0">
+        <div class="min-w-0 pr-4">
+          <h3 class="text-base font-bold text-muted-soft flex items-center space-x-2">
+            <span>📄 Version History</span>
+          </h3>
+          <div class="text-sm font-medium text-muted-soft truncate mt-0.5" x-text="versionData.base_name"></div>
+          <div class="text-xs text-muted-soft font-mono truncate" x-text="versionData.module_path"></div>
+        </div>
+        <button @click="showVersionModal = false" class="text-muted-soft hover:text-ink text-xl font-bold flex-shrink-0">&times;</button>
+      </div>
+
+      <!-- Tags Section for Document (Sub-Task 4.5) -->
+      <div class="px-1 py-2 border-b border-surface-soft/80 flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
+        <div class="flex items-center flex-wrap gap-1.5">
+          <span class="text-xs text-muted-soft font-semibold mr-1">Tags:</span>
+          <template x-for="t in modalDocTags" :key="t.id">
+            <span 
+              class="text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center space-x-1"
+              :style="`background-color: ${t.color}25; color: ${t.color}; border: 1px solid ${t.color}50;`">
+              <span x-text="t.name"></span>
+              <button @click="removeDocTag(modalDocId, t.id)" class="hover:text-red-400 text-xs ml-1 font-bold" title="Remove tag">&times;</button>
+            </span>
+          </template>
+          <template x-if="modalDocTags.length === 0">
+            <span class="text-xs text-muted-soft italic">No tags attached</span>
+          </template>
+        </div>
+
+        <!-- [+ Add tag] Popover -->
+        <div class="relative" @click.outside="showAddTagDropdown = false">
+          <button 
+            type="button"
+            @click="showAddTagDropdown = !showAddTagDropdown" 
+            class="px-2.5 py-1 bg-canvas hover:bg-canvas text-primary border border-surface-soft text-xs font-medium rounded-lg transition inline-flex items-center space-x-1">
+            <span>+ Add tag</span>
+          </button>
+
+          <div 
+            x-show="showAddTagDropdown" 
+            x-transition
+            class="absolute right-0 top-full mt-1.5 w-64 bg-canvas border border-surface-soft rounded-xl shadow-2xl p-3 z-30 space-y-2"
+            style="display: none;">
+            <input 
+              type="text" 
+              placeholder="Search or new tag name..." 
+              x-model="tagSearchQuery" 
+              class="w-full bg-canvas border border-surface-soft rounded-lg px-2.5 py-1.5 text-xs text-muted-soft focus:outline-none focus:ring-1 focus:ring-primary" 
+            />
+
+            <div class="max-h-40 overflow-y-auto space-y-1 pr-1">
+              <template x-for="tag in filteredAvailableTags()" :key="tag.id">
+                <label class="flex items-center space-x-2 px-2 py-1.5 hover:bg-canvas rounded-lg cursor-pointer text-xs select-none">
+                  <input 
+                    type="checkbox" 
+                    :checked="isModalDocTagged(tag.id)" 
+                    @change="toggleDocTag(modalDocId, tag.id)" 
+                    class="w-3.5 h-3.5 rounded bg-canvas border-surface-soft text-primary focus:ring-0" 
+                  />
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="`background-color: ${tag.color};`"></span>
+                  <span class="text-muted-soft truncate flex-1" x-text="tag.name"></span>
+                </label>
+              </template>
+            </div>
+
+            <template x-if="tagSearchQuery && canCreateTagFromQuery()">
+              <button 
+                type="button"
+                @click="createAndAddDocTag(modalDocId, tagSearchQuery)" 
+                class="w-full text-left px-2 py-1.5 text-xs text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/40 transition">
+                + Create "<span x-text="tagSearchQuery"></span>"
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto min-h-0 space-y-3 pr-1 scrollbar-thin">
+        <template x-if="loadingVersions">
+          <div class="py-12 text-center text-muted-soft text-sm">Loading version history...</div>
+        </template>
+        <template x-for="v in versionData.versions" :key="v.id">
+          <div 
+            class="p-3.5 rounded-xl border bg-surface-soft space-y-2"
+            :class="v.is_current ? 'border-l-4 border-l-blue-500 border-surface-soft bg-canvas' : 'border-surface-soft hover:border-surface-soft'">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center space-x-2">
+                <span class="text-sm font-semibold text-muted-soft font-mono" x-text="v.version_num ? `V${v.version_num}` : 'N/A'"></span>
+                <span class="text-xs text-muted-soft font-mono" x-text="v.version_date || ''"></span>
+                <template x-if="v.is_latest === 1">
+                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase">LATEST</span>
+                </template>
+                <template x-if="v.is_current === 1">
+                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 uppercase">CURRENT ← bookmarked</span>
+                </template>
+                <template x-if="v.is_oldest === 1">
+                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-canvas border border-surface-soft/50 uppercase">OLDEST</span>
+                </template>
+              </div>
+              <span class="text-xs text-muted-soft font-mono" x-text="(v.file_size ? (v.file_size / 1024).toFixed(1) + ' KB' : '')"></span>
+            </div>
+
+            <div class="text-xs font-mono text-muted-soft break-all" x-text="v.file_name"></div>
+
+            <div class="flex items-center space-x-2 pt-1 flex-wrap gap-y-1">
+              <button 
+                @click="openDocument(v)" 
+                class="px-2.5 py-1 text-xs font-medium bg-primary hover:bg-primary-active text-on-primary rounded-lg transition inline-flex items-center space-x-1 shadow-sm"
+                title="Open file">
+                <span>Open</span>
+              </button>
+              <button 
+                @click="revealDocument(v)" 
+                class="px-2.5 py-1 text-xs font-medium bg-canvas hover:bg-canvas text-muted-soft border border-surface-soft rounded-lg transition inline-flex items-center space-x-1"
+                title="Reveal in folder">
+                <span>📂 Reveal in Folder</span>
+              </button>
+              <button 
+                @click="openAddBookmarkModal(v)" 
+                :disabled="isDocInAnyGroup(v.id)"
+                :class="isDocInAnyGroup(v.id) ? 'bg-canvas border border-surface-soft cursor-not-allowed' : 'bg-primary hover:bg-primary-active text-on-primary shadow-sm'"
+                class="px-2.5 py-1 text-xs font-medium rounded-lg transition inline-flex items-center space-x-1">
+                <span x-text="isDocInAnyGroup(v.id) ? 'Already bookmarked' : '🔖 Bookmark'"></span>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="flex justify-end pt-3 border-t border-surface-soft flex-shrink-0">
+        <button @click="showVersionModal = false" class="px-4 py-2 bg-canvas hover:bg-canvas text-muted-soft text-xs font-medium rounded-xl">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🏷️ Global Tag Management Modal (ADR-009 / ADR-020: Never close on backdrop click) -->
+  <div x-show="showTagManageModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-soft/80" style="display: none;">
+    <div class="bg-canvas border border-hairline shadow-2xl w-full max-w-lg p-6 rounded-2xl space-y-4 max-h-[90vh] flex flex-col" @click.stop>
+      <div class="flex items-center justify-between border-b border-surface-soft pb-3 flex-shrink-0">
+        <h3 class="text-base font-bold text-muted-soft flex items-center space-x-2">
+          <span>🏷️ Manage Document Tags</span>
+        </h3>
+        <button @click="showTagManageModal = false" class="text-muted-soft hover:text-ink text-xl font-bold flex-shrink-0">&times;</button>
+      </div>
+
+      <!-- Create New Tag Form -->
+      <div class="p-3 bg-canvas space-y-3">
+        <div class="text-xs font-semibold text-muted-soft">Create New Tag</div>
+        <div class="flex items-center space-x-2">
+          <input 
+            type="text" 
+            placeholder="Tag name (e.g. Critical, Spec, API)..." 
+            x-model="newTagName" 
+            class="flex-1 bg-canvas border border-surface-soft rounded-lg px-3 py-1.5 text-xs text-muted-soft focus:outline-none focus:ring-1 focus:ring-primary" 
+          />
+          <input 
+            type="color" 
+            x-model="newTagColor" 
+            class="w-8 h-8 rounded-lg border border-surface-soft bg-transparent cursor-pointer p-0.5" 
+            title="Choose color"
+          />
+          <button 
+            @click="createTagGlobal()" 
+            class="px-3 py-1.5 bg-primary hover:bg-primary-active text-on-primary text-xs font-medium rounded-lg transition shadow-sm">
+            Create
+          </button>
+        </div>
+      </div>
+
+      <!-- Tags List -->
+      <div class="flex-1 overflow-y-auto min-h-0 space-y-2 pr-1 scrollbar-thin">
+        <template x-for="tag in allTags" :key="tag.id">
+          <div class="p-2.5 rounded-xl border border-surface-soft bg-canvas justify-between gap-3">
+            <div class="flex items-center space-x-2 min-w-0 flex-1">
+              <input 
+                type="color" 
+                :value="tag.color" 
+                @change="updateTagColorGlobal(tag, $event.target.value)"
+                class="w-6 h-6 rounded border border-surface-soft bg-transparent cursor-pointer p-0 flex-shrink-0" 
+                title="Change color"
+              />
+              <template x-if="editingTagId !== tag.id">
+                <span class="text-xs font-medium text-muted-soft truncate cursor-pointer hover:underline" @click="startEditTag(tag)" x-text="tag.name" title="Click to rename"></span>
+              </template>
+              <template x-if="editingTagId === tag.id">
+                <div class="flex items-center space-x-1.5 flex-1 min-w-0">
+                  <input 
+                    type="text" 
+                    x-model="editingTagName" 
+                    class="bg-canvas border border-primary rounded px-2 py-0.5 text-xs text-muted-soft flex-1 min-w-0" 
+                    @keydown.enter="saveEditTag(tag)"
+                    @keydown.escape="cancelEditTag()"
+                  />
+                  <button @click="saveEditTag(tag)" class="text-emerald-400 hover:text-emerald-300 text-xs px-1">✓</button>
+                  <button @click="cancelEditTag()" class="text-muted-soft hover:text-muted-soft text-xs px-1">&times;</button>
+                </div>
+              </template>
+            </div>
+
+            <div class="flex items-center space-x-2 flex-shrink-0">
+              <span class="text-[11px] text-muted-soft font-mono" x-text="`${tag.doc_count || 0} doc(s)`"></span>
+              <button 
+                @click="deleteTagGlobal(tag.id)" 
+                class="text-red-400 hover:text-red-300 p-1 text-xs rounded hover:bg-red-500/10 transition" 
+                title="Delete tag">
+                🗑️
+              </button>
+            </div>
+          </div>
+        </template>
+        <div x-show="allTags.length === 0" class="text-center py-6 text-muted-soft text-xs">
+          No tags created yet.
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-3 border-t border-surface-soft flex-shrink-0">
+        <button @click="showTagManageModal = false" class="px-4 py-2 bg-canvas hover:bg-canvas text-muted-soft text-xs font-medium rounded-xl">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔖 Bookmark Group Full View Modal (Sub-Task 5.4 - ADR-009 / ADR-020) -->
+  <div x-show="showGroupDetailModal" @keydown.window.escape="showGroupDetailModal = false" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-soft/80" style="display: none;">
+    <div class="bg-canvas border border-hairline shadow-2xl w-full max-w-4xl p-6 rounded-2xl space-y-4 max-h-[90vh] flex flex-col" @click.stop>
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-surface-soft pb-3 flex-shrink-0">
+        <div class="flex items-center space-x-2.5 min-w-0 pr-4">
+          <span class="w-3.5 h-3.5 rounded-full flex-shrink-0" :style="selectedGroupDetail ? `background-color: ${selectedGroupDetail.color}; box-shadow: 0 0 8px ${selectedGroupDetail.color}80;` : ''"></span>
+          <h3 class="text-base font-bold text-muted-soft truncate" x-text="selectedGroupDetail ? `🔖 ${selectedGroupDetail.name} (${groupDetailItems.length} items)` : 'Bookmark Group'"></h3>
+        </div>
+        <button @click="showGroupDetailModal = false" class="text-muted-soft hover:text-ink text-xl font-bold flex-shrink-0">&times;</button>
+      </div>
+
+      <!-- Toolbar: Search, Sort, Filter -->
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-canvas flex-shrink-0 text-xs">
+        <div class="relative flex-1 min-w-[180px]">
+          <input 
+            type="text" 
+            placeholder="Search in group..." 
+            class="w-full bg-canvas border border-surface-soft rounded-lg px-3 py-1.5 text-muted-soft text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            x-model="groupDetailSearch" 
+          />
+        </div>
+        <div class="flex items-center space-x-2 flex-wrap gap-y-2">
+          <!-- Sort dropdown -->
+          <div class="flex items-center space-x-1">
+            <span class="text-muted-soft">Sort:</span>
+            <select 
+              class="bg-canvas border border-surface-soft rounded-lg px-2 py-1.5 text-muted-soft text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              x-model="groupDetailSort">
+              <option value="name">Name (A-Z)</option>
+              <option value="date">Version Date (newest)</option>
+              <option value="added">Added (newest)</option>
+            </select>
+          </div>
+          <!-- Filter dropdown -->
+          <div class="flex items-center space-x-1">
+            <span class="text-muted-soft">Filter:</span>
+            <select 
+              class="bg-canvas border border-surface-soft rounded-lg px-2 py-1.5 text-muted-soft text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              x-model="groupDetailFilter">
+              <option value="all">All Items</option>
+              <option value="outdated">Outdated Only</option>
+              <option value="notes">Has Note</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Items Table -->
+      <div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto scrollbar-thin rounded-xl border border-surface-soft">
+        <table class="w-full table-fixed">
+          <thead class="bg-surface-soft text-muted-soft uppercase text-xs tracking-widest border-b border-hairline">
+            <tr>
+              <th class="p-3 w-10 text-center">
+                <input 
+                  type="checkbox" 
+                  class="w-3.5 h-3.5 rounded bg-canvas border-surface-soft text-primary focus:ring-0" 
+                  :checked="isAllGroupDetailSelected()" 
+                  @change="toggleSelectAllGroupDetail($event.target.checked)" 
+                />
+              </th>
+              <th class="px-3 py-3 min-w-0">Name</th>
+              <th class="px-3 py-3 w-28 whitespace-nowrap">Version</th>
+              <th class="px-3 py-3 w-24 whitespace-nowrap hidden sm:table-cell">Added</th>
+              <th class="px-3 py-3 w-40">Note</th>
+              <th class="px-3 py-3 w-28 text-right whitespace-nowrap">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-hairline-soft bg-canvas">
+            <template x-for="item in filteredSortedGroupDetailItems()" :key="item.item_id">
+              <tr class="bg-canvas hover:bg-surface-soft border-b border-hairline" 
+
+                @contextmenu.prevent="openBookmarkMenu($event, item, selectedGroupDetail)">
+                <td class="p-3 text-center">
+                  <input 
+                    type="checkbox" 
+                    class="w-3.5 h-3.5 rounded bg-canvas border-surface-soft text-primary focus:ring-0" 
+                    :checked="selectedGroupDetailItemIds.includes(item.item_id)" 
+                    @change="toggleGroupDetailItemSelect(item.item_id)" 
+                    />
+                </td>
+                <td class="px-3 py-2.5 min-w-0 overflow-hidden">
+                  <div class="flex items-center space-x-1.5 min-w-0">
+                    <span x-show="item.is_outdated" class="text-orange-400 flex-shrink-0" title="Newer version available">⚠️</span>
+                    <span 
+                      class="font-medium text-muted-soft truncate cursor-pointer hover:text-primary transition" 
+                      @click="openVersionModal(item.document.id, item.document.id)" 
+                      :title="`${item.document.file_name}\n${item.document.file_path}`" 
+                      x-text="item.document.file_name"></span>
+                  </div>
+                  <template x-if="item.is_outdated && item.latest_sibling">
+                    <div class="text-[11px] text-orange-400/90 flex items-center space-x-2 pt-0.5 truncate">
+                      <span x-text="`Newer: V${item.latest_sibling?.version_num || '?'} (${item.latest_sibling?.version_date || ''})`"></span>
+                      <button @click.stop="openDocument(item.latest_sibling)" class="text-primary hover:underline">Open</button>
+                      <button @click.stop="updateBookmarkToLatest(item.item_id, selectedGroupDetail.id)" class="text-orange-400 font-semibold hover:underline">Update</button>
+                    </div>
+                  </template>
+                </td>
+                <td class="px-3 py-2.5 whitespace-nowrap">
+                  <span class="bg-surface-card rounded-pill px-2 py-0.5 text-sm" x-text="item.document?.version_num ? `V${item.document.version_num}` : 'N/A'"></span>
+                  <template x-if="item.document.is_latest === 1">
+                    <span class="text-[9px] font-bold px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase ml-1">LATEST</span>
+                  </template>
+                  <template x-if="item.is_outdated">
+                    <span class="text-[9px] font-bold px-1 py-0.2 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase ml-1">OUTDATED</span>
+                  </template>
+                </td>
+                <td class="px-3 py-2.5 whitespace-nowrap text-muted-soft font-mono text-[11px] hidden sm:table-cell" x-text="formatDate(item.created_at)"></td>
+                <td class="px-3 py-2.5">
+                  <div class="group/note relative">
+                    <input 
+                      type="text" 
+                      :value="item.note || ''" 
+                      @blur="saveItemNoteInline(item.item_id, $event.target.value)"
+                      @keydown.enter="$event.target.blur()"
+                      placeholder="Add note..." 
+                      class="w-full bg-transparent hover:bg-canvas focus:bg-canvas border border-transparent hover:border-surface-soft focus:border-primary rounded px-1.5 py-0.5 text-xs text-muted-soft placeholder-muted-soft focus:outline-none transition" 
+                    />
+                  </div>
+                </td>
+                <td class="px-3 py-2.5 text-right space-x-1 whitespace-nowrap">
+                  <button @click="openPreviewModal(item.document)" class="px-2 py-1 bg-primary text-on-primary rounded-md" title="Preview in browser">👁️</button>
+                  <button @click="openDocument(item.document)" class="p-1 text-muted-soft hover:text-ink rounded hover:bg-canvas" title="Open file">📂</button>
+                  <button @click="revealDocument(item.document)" class="p-1 text-muted-soft hover:text-ink rounded hover:bg-canvas" title="Reveal in folder">📁</button>
+                  <button @click="removeItemFromGroup(item.item_id, selectedGroupDetail.id)" class="p-1 text-muted-soft hover:text-red-400 font-bold" title="Remove">&times;</button>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="filteredSortedGroupDetailItems().length === 0">
+              <td colspan="6" class="p-8 text-center text-muted-soft text-xs">
+                No items match criteria.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Footer & Bulk Actions Bar -->
+      <div class="flex items-center justify-between pt-3 border-t border-surface-soft flex-shrink-0 flex-wrap gap-2">
+        <div class="flex items-center space-x-3 text-xs">
+          <template x-if="selectedGroupDetailItemIds.length > 0">
+            <div class="flex items-center space-x-2 bg-canvas px-3 py-1.5 rounded-xl border border-surface-soft">
+              <span class="font-medium text-muted-soft" x-text="`Selected: ${selectedGroupDetailItemIds.length}`"></span>
+              <button 
+                @click="bulkRemoveSelectedGroupDetailItems()" 
+                class="px-2 py-1 bg-error hover:bg-error/90 text-on-primary rounded text-xs transition">
+                Remove Selected
+              </button>
+              <button 
+                @click="bulkUpdateSelectedToLatest()" 
+                class="px-2 py-1 bg-warning hover:bg-warning/90 text-on-primary rounded text-xs transition">
+                Update All to Latest
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <button @click="showGroupDetailModal = false" class="px-4 py-2 bg-canvas hover:bg-canvas text-muted-soft text-xs font-medium rounded-xl">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 👁️ Web File Preview Modal (Sub-Task 5.5 - ADR-009 / ADR-020) -->
+  <div x-show="showPreviewModal" @keydown.window.escape="showPreviewModal = false" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-soft/80" style="display: none;">
+    <div class="bg-canvas border border-hairline shadow-2xl w-full max-w-6xl p-6 rounded-2xl space-y-4 max-h-[90vh] flex flex-col" @click.stop>
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-surface-soft pb-3 flex-shrink-0">
+        <div class="flex items-center space-x-2 min-w-0 pr-4">
+          <span class="text-lg">👁️</span>
+          <div class="min-w-0">
+            <h3 class="text-base font-bold text-muted-soft truncate" x-text="previewData ? `Preview: ${previewData.file_name}` : 'File Preview'"></h3>
+            <p class="text-xs text-muted-soft font-mono" x-text="previewData && previewData.file_size ? `${(previewData.file_size / 1024).toFixed(1)} KB` : ''"></p>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2 flex-shrink-0">
+          <template x-if="currentPreviewDoc">
+            <div class="flex items-center space-x-1.5">
+              <button @click="openDocument(currentPreviewDoc)" class="px-2.5 py-1 text-xs font-medium bg-primary hover:bg-primary-active text-on-primary rounded-lg transition inline-flex items-center space-x-1 shadow-sm">
+                <span>Open</span>
+              </button>
+              <button @click="revealDocument(currentPreviewDoc)" class="px-2.5 py-1 text-xs font-medium bg-canvas hover:bg-canvas text-muted-soft border border-surface-soft rounded-lg transition inline-flex items-center space-x-1">
+                <span>📁 Reveal</span>
+              </button>
+            </div>
+          </template>
+          <button @click="showPreviewModal = false" class="text-muted-soft hover:text-ink text-xl font-bold flex-shrink-0 ml-2">&times;</button>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div x-show="loadingPreview" class="flex-1 flex items-center justify-center py-16 text-muted-soft text-sm">
+        <div class="flex items-center space-x-2">
+          <svg class="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          <span>Loading file preview...</span>
+        </div>
+      </div>
+
+      <!-- Preview Body -->
+      <div x-show="!loadingPreview && previewData" class="flex-1 min-h-0 flex flex-col space-y-3">
+        <!-- 1. Excel Preview (xlsx, xls) -->
+        <template x-if="previewData && previewData.type === 'xlsx'">
+          <div class="flex-1 min-h-0 flex flex-col space-y-2">
+            <!-- Sheet Tabs -->
+            <div class="flex items-center space-x-1 overflow-x-auto pb-1 border-b border-surface-soft scrollbar-thin flex-shrink-0">
+              <template x-for="(sheet, idx) in previewData.sheets" :key="idx">
+                <button 
+                  @click="activeSheetIndex = idx" 
+                  :class="activeSheetIndex === idx ? 'bg-primary text-on-primary font-semibold' : 'bg-surface-card hover:bg-surface-cream-strong text-muted-soft'"
+                  class="px-3 py-1 text-xs rounded-lg transition whitespace-nowrap flex items-center space-x-1.5">
+                  <span x-text="sheet.name"></span>
+                  <span class="text-[10px] opacity-70" x-text="`(${sheet.rows.length})`"></span>
+                </button>
+              </template>
+            </div>
+
+            <!-- Active Sheet Table -->
+            <template x-if="previewData.sheets && previewData.sheets[activeSheetIndex]">
+              <div class="flex-1 min-h-0 flex flex-col space-y-2">
+                <div class="flex-1 min-h-0 overflow-auto scrollbar-thin rounded-xl border border-surface-soft bg-canvas">
+                  <table class="w-full text-left text-xs border-collapse">
+                    <thead class="bg-canvas sticky top-0 z-10 border-b border-surface-soft font-semibold text-muted-soft">
+                      <tr>
+                        <th class="p-2 border-r border-surface-soft w-12 text-center text-muted-soft bg-surface-soft sticky left-0 z-20">#</th>
+                        <template x-for="(head, hIdx) in previewData.sheets[activeSheetIndex].headers" :key="hIdx">
+                          <th class="p-2 border-r border-surface-soft whitespace-nowrap min-w-[120px]" x-text="head || String.fromCharCode(65 + hIdx)"></th>
+                        </template>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-hairline-soft font-mono text-[11px] text-muted-soft">
+                      <template x-for="(row, rIdx) in previewData.sheets[activeSheetIndex].rows" :key="rIdx">
+                        <tr class="hover:bg-canvas">
+                          <td class="p-2 border-r border-surface-soft text-center text-muted-soft bg-canvas sticky left-0 z-10" x-text="rIdx + 1"></td>
+                          <template x-for="(cell, cIdx) in row" :key="cIdx">
+                            <td class="p-2 border-r border-surface-soft/50 whitespace-pre truncate max-w-xs" :title="cell" x-text="cell"></td>
+                          </template>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="text-[11px] text-muted-soft flex justify-between px-1">
+                  <span x-text="`Showing first ${previewData.sheets[activeSheetIndex].rows.length} rows of ${previewData.sheets[activeSheetIndex].totalRows}`"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- 2. CSV Preview -->
+        <template x-if="previewData && previewData.type === 'csv'">
+          <div class="flex-1 min-h-0 flex flex-col space-y-2">
+            <div class="flex-1 min-h-0 overflow-auto scrollbar-thin rounded-xl border border-surface-soft bg-canvas">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-canvas sticky top-0 z-10 border-b border-surface-soft font-semibold text-muted-soft">
+                  <tr>
+                    <th class="p-2 border-r border-surface-soft w-12 text-center text-muted-soft bg-surface-soft sticky left-0 z-20">#</th>
+                    <template x-for="(head, hIdx) in previewData.headers" :key="hIdx">
+                      <th class="p-2 border-r border-surface-soft whitespace-nowrap min-w-[120px]" x-text="head || `Col ${hIdx + 1}`"></th>
+                    </template>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline-soft font-mono text-[11px] text-muted-soft">
+                  <template x-for="(row, rIdx) in previewData.rows" :key="rIdx">
+                    <tr class="hover:bg-canvas">
+                      <td class="p-2 border-r border-surface-soft text-center text-muted-soft bg-canvas sticky left-0 z-10" x-text="rIdx + 1"></td>
+                      <template x-for="(cell, cIdx) in row" :key="cIdx">
+                        <td class="p-2 border-r border-surface-soft/50 whitespace-pre truncate max-w-xs" :title="cell" x-text="cell"></td>
+                      </template>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="text-[11px] text-muted-soft flex justify-between px-1">
+              <span x-text="`Showing first ${previewData.rows.length} rows of ${previewData.totalRows}`"></span>
+            </div>
+          </div>
+        </template>
+
+        <!-- 3. Text / Markdown Preview -->
+        <template x-if="previewData && previewData.type === 'text'">
+          <div class="flex-1 min-h-0 overflow-auto scrollbar-thin rounded-xl border border-surface-soft bg-canvas p-4">
+            <pre class="font-mono text-xs text-muted-soft whitespace-pre-wrap break-words leading-relaxed" x-text="previewData.content"></pre>
+          </div>
+        </template>
+
+        <!-- 4. PDF Preview (Embedded Viewer) -->
+        <template x-if="previewData && previewData.type === 'raw' && previewData.mimeType === 'application/pdf'">
+          <div class="flex-1 min-h-0 rounded-xl overflow-hidden border border-surface-soft bg-canvas">
+            <iframe :src="previewData.url" class="w-full h-full min-h-[500px] border-0"></iframe>
+          </div>
+        </template>
+
+        <!-- 5. Image Preview -->
+        <template x-if="previewData && previewData.type === 'raw' && previewData.mimeType && previewData.mimeType.startsWith('image/')">
+          <div class="flex-1 min-h-0 flex items-center justify-center p-4 bg-canvas overflow-auto scrollbar-thin">
+            <img :src="previewData.url" :alt="previewData.file_name" class="max-w-full max-h-[70vh] rounded-lg shadow-2xl object-contain border border-surface-soft/50" />
+          </div>
+        </template>
+
+        <!-- 6. Unsupported Fallback -->
+        <template x-if="previewData && previewData.type === 'unsupported'">
+          <div class="flex-1 flex flex-col items-center justify-center py-16 text-center space-y-3">
+            <div class="text-4xl">📄</div>
+            <div class="text-sm font-medium text-muted-soft">In-browser preview is not supported for this file type.</div>
+            <div class="text-xs text-muted-soft">You can open it directly with your operating system's default application.</div>
+            <div class="flex items-center space-x-2 pt-2">
+              <button @click="openDocument(currentPreviewDoc)" class="px-3 py-1.5 bg-primary hover:bg-primary-active text-on-primary rounded-lg text-xs font-medium transition shadow-sm">
+                Open in OS Default App
+              </button>
+              <button @click="revealDocument(currentPreviewDoc)" class="px-3 py-1.5 bg-canvas hover:bg-canvas text-muted-soft border border-surface-soft rounded-lg text-xs font-medium transition">
+                📂 Reveal in Folder
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="flex justify-end pt-3 border-t border-surface-soft flex-shrink-0">
+        <button @click="showPreviewModal = false" class="px-4 py-2 bg-canvas hover:bg-canvas text-muted-soft text-xs font-medium rounded-xl">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function docApp() {
+      return {
+        query: '',
+        selectedModule: '',
+        onlyLatest: false,
+        documents: [],
+        totalDocs: 0,
+        modules: [],
+
+        // Bookmark Groups State per 2.8 & Outdated Detection per 3.3
+        bookmarkGroups: [],
+        expandedGroups: {},
+        groupItems: {},
+        documentGroupMap: {}, // { documentId: [{ group_id, color, name }, ...] }
+        outdatedCount: 0,
+        showOnlyOutdated: false,
+
+        // Bookmark Filter State per 4.4
+        showBookmarkFilter: false,
+        bookmarkFilter: {
+          search: '',
+          groupId: '',
+          onlyOutdated: false,
+          onlyWithNotes: false
+        },
+
+        showBookmarks: typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+        showRescanModal: false,
+        scanRootDir: '',
+
+        // Version History Modal State per 4.2
+        showVersionModal: false,
+        loadingVersions: false,
+        versionData: { base_name: '', module_path: '', total: 0, versions: [] },
+
+        // Tags State per 4.5
+        allTags: [],
+        selectedTagIds: [],
+        showTagFilterDropdown: false,
+        showTagManageModal: false,
+        modalDocId: null,
+        modalDocTags: [],
+        showAddTagDropdown: false,
+        tagSearchQuery: '',
+        newTagName: '',
+        newTagColor: '#6366f1',
+        editingTagId: null,
+        editingTagName: '',
+        editingTagColor: '#6366f1',
+
+        // Modals
+        showAddBookmarkModal: false,
+        showManageGroupModal: false,
+        editingGroup: null,
+
+        // Task 5.2: Drag & Drop Tags State
+        showSidebarTags: true,
+        draggedOverDocId: null,
+        draggingTagColor: null,
+        draggingTagId: null,
+
+        // Task 5.4: Bookmark Group Full View Modal State
+        showGroupDetailModal: false,
+        selectedGroupDetail: null,
+        groupDetailItems: [],
+        groupDetailSearch: '',
+        groupDetailSort: 'name',
+        groupDetailFilter: 'all',
+        selectedGroupDetailItemIds: [],
+
+        // Task 5.5: Web File Preview Modal State
+        showPreviewModal: false,
+        loadingPreview: false,
+        previewData: null,
+        currentPreviewDoc: null,
+        activeSheetIndex: 0,
+
+        newBookmark: {
+          documentId: null,
+          documentName: '',
+          selectedGroupId: null,
+          createNew: false,
+          newGroupName: '',
+          newGroupColor: '#6366f1',
+          note: ''
+        },
+
+        manageForm: {
+          name: '',
+          color: '#6366f1',
+          description: ''
+        },
+
+        async initApp() {
+          await this.loadModules();
+          await this.loadTags();
+          await this.loadBookmarkGroups();
+          await this.loadDocuments();
+          await this.loadOutdatedCount();
+        },
+
+        async loadModules() {
+          try {
+            const res = await fetch('/api/modules');
+            const data = await res.json();
+            this.modules = data.modules || [];
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async loadDocuments() {
+          try {
+            const params = new URLSearchParams({
+              q: this.query,
+              module: this.selectedModule,
+              only_latest: this.onlyLatest
+            });
+            if (this.selectedTagIds.length > 0) {
+              params.append('tagIds', this.selectedTagIds.join(','));
+            }
+            const res = await fetch(`/api/documents?${params.toString()}`);
+            const data = await res.json();
+            this.documents = data.documents || [];
+            this.totalDocs = data.total || 0;
+            await this.loadDocumentGroupMap();
+          } catch (e) {
+            showToast('Failed to load documents', 'error');
+          }
+        },
+
+        async loadBookmarkGroups() {
+          try {
+            const res = await fetch('/api/bookmark-groups');
+            const data = await res.json();
+            this.bookmarkGroups = Array.isArray(data) ? data : [];
+            // Refresh items for all currently expanded groups
+            for (const g of this.bookmarkGroups) {
+              if (this.expandedGroups[g.id]) {
+                await this.loadGroupItems(g.id);
+              }
+            }
+            await this.loadOutdatedCount();
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async toggleGroup(groupId) {
+          this.expandedGroups[groupId] = !this.expandedGroups[groupId];
+          if (this.expandedGroups[groupId]) {
+            await this.loadGroupItems(groupId);
+          }
+        },
+
+        async loadGroupItems(groupId) {
+          try {
+            const res = await fetch(`/api/bookmark-groups/${groupId}/items`);
+            const data = await res.json();
+            this.groupItems[groupId] = Array.isArray(data) ? data : [];
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async loadDocumentGroupMap() {
+          const map = {};
+          for (const doc of this.documents) {
+            try {
+              const res = await fetch(`/api/documents/${doc.id}/bookmark-groups`);
+              if (res.ok) {
+                const groups = await res.json();
+                map[doc.id] = groups;
+              }
+            } catch (err) {
+              map[doc.id] = [];
+            }
+          }
+          this.documentGroupMap = map;
+        },
+
+        isDocInGroup(docId, groupId) {
+          const groups = this.documentGroupMap[docId] || [];
+          return groups.some(g => g.group_id === groupId);
+        },
+
+        openAddBookmarkModal(doc) {
+          this.newBookmark = {
+            documentId: doc.id,
+            documentName: doc.file_name,
+            selectedGroupId: null,
+            createNew: false,
+            newGroupName: '',
+            newGroupColor: '#6366f1',
+            note: ''
+          };
+
+          // Pick the first available group by default if any
+          const available = this.bookmarkGroups.find(g => !this.isDocInGroup(doc.id, g.id));
+          if (available) {
+            this.newBookmark.selectedGroupId = available.id;
+          } else {
+            this.newBookmark.createNew = true;
+          }
+
+          this.showAddBookmarkModal = true;
+        },
+
+        async submitAddBookmark() {
+          const docId = this.newBookmark.documentId;
+          let targetGroupId = this.newBookmark.selectedGroupId;
+
+          if (this.newBookmark.createNew) {
+            if (!this.newBookmark.newGroupName.trim()) {
+              showToast('Group name is required', 'warning');
+              return;
+            }
+            try {
+              const createRes = await fetch('/api/bookmark-groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: this.newBookmark.newGroupName.trim(),
+                  color: this.newBookmark.newGroupColor
+                })
+              });
+              const newGrp = await createRes.json();
+              if (!createRes.ok) {
+                showToast(newGrp.error || 'Failed to create group', 'error');
+                return;
+              }
+              targetGroupId = newGrp.id;
+            } catch (e) {
+              showToast('Error creating new group', 'error');
+              return;
+            }
+          }
+
+          if (!targetGroupId) {
+            showToast('Please select or create a group', 'warning');
+            return;
+          }
+
+          try {
+            const addRes = await fetch(`/api/bookmark-groups/${targetGroupId}/items`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                documentId: docId,
+                note: this.newBookmark.note
+              })
+            });
+            const resData = await addRes.json();
+            if (addRes.ok) {
+              showToast('Added to bookmark group', 'success');
+              this.showAddBookmarkModal = false;
+              await this.loadBookmarkGroups();
+              if (this.expandedGroups[targetGroupId]) {
+                await this.loadGroupItems(targetGroupId);
+              }
+              await this.loadDocumentGroupMap();
+            } else {
+              showToast(resData.error || 'Cannot add to group', 'error');
+            }
+          } catch (e) {
+            showToast('Failed to add to group', 'error');
+          }
+        },
+
+        openNewGroupModal() {
+          this.editingGroup = null;
+          this.manageForm = {
+            name: '',
+            color: '#6366f1',
+            description: ''
+          };
+          this.showManageGroupModal = true;
+        },
+
+        openManageGroupModal(group) {
+          this.editingGroup = group;
+          this.manageForm = {
+            name: group.name,
+            color: group.color,
+            description: group.description || ''
+          };
+          this.showManageGroupModal = true;
+        },
+
+        async saveGroup() {
+          if (!this.manageForm.name.trim()) {
+            showToast('Group name is required', 'warning');
+            return;
+          }
+
+          try {
+            if (this.editingGroup && this.editingGroup.id) {
+              // Update existing
+              const res = await fetch(`/api/bookmark-groups/${this.editingGroup.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: this.manageForm.name.trim(),
+                  color: this.manageForm.color,
+                  description: this.manageForm.description
+                })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                showToast('Group updated', 'success');
+                this.showManageGroupModal = false;
+                await this.loadBookmarkGroups();
+                await this.loadDocumentGroupMap();
+              } else {
+                showToast(data.error || 'Failed to update group', 'error');
+              }
+            } else {
+              // Create new
+              const res = await fetch('/api/bookmark-groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: this.manageForm.name.trim(),
+                  color: this.manageForm.color,
+                  description: this.manageForm.description
+                })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                showToast('Group created', 'success');
+                this.showManageGroupModal = false;
+                await this.loadBookmarkGroups();
+              } else {
+                showToast(data.error || 'Failed to create group', 'error');
+              }
+            }
+          } catch (e) {
+            showToast('Error saving group', 'error');
+          }
+        },
+
+        async deleteCurrentGroup() {
+          if (!this.editingGroup || !this.editingGroup.id) return;
+          if (!confirm('Delete group and all its items? This cannot be undone.')) {
+            return;
+          }
+
+          try {
+            const res = await fetch(`/api/bookmark-groups/${this.editingGroup.id}`, {
+              method: 'DELETE'
+            });
+            if (res.ok) {
+              showToast('Group deleted', 'info');
+              this.showManageGroupModal = false;
+              await this.loadBookmarkGroups();
+              await this.loadDocumentGroupMap();
+            } else {
+              const data = await res.json();
+              showToast(data.error || 'Failed to delete group', 'error');
+            }
+          } catch (e) {
+            showToast('Error deleting group', 'error');
+          }
+        },
+
+        async removeItemFromGroup(itemId, groupId) {
+          if (!confirm('Remove this document from the group?')) return;
+          try {
+            const res = await fetch(`/api/bookmark-items/${itemId}`, {
+              method: 'DELETE'
+            });
+            if (res.ok) {
+              showToast('Removed from group', 'info');
+              await this.loadBookmarkGroups();
+              await this.loadGroupItems(groupId);
+              await this.loadDocumentGroupMap();
+            } else {
+              showToast('Failed to remove item', 'error');
+            }
+          } catch (e) {
+            showToast('Error removing item', 'error');
+          }
+        },
+
+        isDocInAnyGroup(docId) {
+          const groups = this.documentGroupMap[docId] || [];
+          return groups.length > 0;
+        },
+
+        async openVersionModal(docId, currentId = null) {
+          this.loadingVersions = true;
+          this.showVersionModal = true;
+          this.modalDocId = currentId || docId;
+          this.showAddTagDropdown = false;
+          this.tagSearchQuery = '';
+          this.versionData = { base_name: '', module_path: '', total: 0, versions: [] };
+          await this.loadModalDocTags();
+          try {
+            const q = currentId ? `?currentId=${currentId}` : '';
+            const res = await fetch(`/api/documents/${docId}/versions${q}`);
+            if (res.ok) {
+              this.versionData = await res.json();
+            } else {
+              showToast('Failed to load version history', 'error');
+            }
+          } catch (e) {
+            showToast('Error loading version history', 'error');
+          } finally {
+            this.loadingVersions = false;
+          }
+        },
+
+        // Tags Methods per 4.5
+        async loadTags() {
+          try {
+            const res = await fetch('/api/tags');
+            if (res.ok) {
+              this.allTags = await res.json();
+            }
+          } catch (e) {
+            console.error('Failed to load tags', e);
+          }
+        },
+
+        toggleTagFilter(tagId) {
+          const numId = Number(tagId);
+          const idx = this.selectedTagIds.indexOf(numId);
+          if (idx > -1) {
+            this.selectedTagIds.splice(idx, 1);
+          } else {
+            this.selectedTagIds.push(numId);
+          }
+          this.loadDocuments();
+        },
+
+        clearTagFilter() {
+          this.selectedTagIds = [];
+          this.loadDocuments();
+        },
+
+        openTagManageModal() {
+          this.loadTags();
+          this.showTagManageModal = true;
+        },
+
+        async createTagGlobal() {
+          if (!this.newTagName || !this.newTagName.trim()) {
+            showToast('Tag name cannot be empty', 'error');
+            return;
+          }
+          try {
+            const res = await fetch('/api/tags', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: this.newTagName.trim(), color: this.newTagColor })
+            });
+            if (res.ok) {
+              showToast('Tag created', 'success');
+              this.newTagName = '';
+              this.newTagColor = '#6366f1';
+              await this.loadTags();
+            } else {
+              const data = await res.json();
+              showToast(`Error: ${data.error || 'Failed to create tag'}`, 'error');
+            }
+          } catch (e) {
+            showToast('Failed to create tag', 'error');
+          }
+        },
+
+        startEditTag(tag) {
+          this.editingTagId = tag.id;
+          this.editingTagName = tag.name;
+          this.editingTagColor = tag.color;
+        },
+
+        cancelEditTag() {
+          this.editingTagId = null;
+          this.editingTagName = '';
+          this.editingTagColor = '#6366f1';
+        },
+
+        async saveEditTag(tag) {
+          if (!this.editingTagName || !this.editingTagName.trim()) {
+            showToast('Tag name cannot be empty', 'error');
+            return;
+          }
+          try {
+            const res = await fetch(`/api/tags/${tag.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: this.editingTagName.trim(), color: this.editingTagColor })
+            });
+            if (res.ok) {
+              showToast('Tag updated', 'success');
+              this.cancelEditTag();
+              await this.loadTags();
+              await this.loadDocuments();
+              if (this.modalDocId) await this.loadModalDocTags();
+            } else {
+              const data = await res.json();
+              showToast(`Error: ${data.error || 'Failed to update tag'}`, 'error');
+            }
+          } catch (e) {
+            showToast('Failed to update tag', 'error');
+          }
+        },
+
+        async updateTagColorGlobal(tag, newColor) {
+          try {
+            const res = await fetch(`/api/tags/${tag.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ color: newColor })
+            });
+            if (res.ok) {
+              await this.loadTags();
+              await this.loadDocuments();
+              if (this.modalDocId) await this.loadModalDocTags();
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async deleteTagGlobal(tagId) {
+          if (!confirm('Are you sure you want to delete this tag? It will be removed from all documents.')) return;
+          try {
+            const res = await fetch(`/api/tags/${tagId}`, { method: 'DELETE' });
+            if (res.ok) {
+              showToast('Tag deleted', 'info');
+              this.selectedTagIds = this.selectedTagIds.filter(id => id !== tagId);
+              await this.loadTags();
+              await this.loadDocuments();
+              if (this.modalDocId) await this.loadModalDocTags();
+            } else {
+              showToast('Failed to delete tag', 'error');
+            }
+          } catch (e) {
+            showToast('Failed to delete tag', 'error');
+          }
+        },
+
+        async loadModalDocTags() {
+          if (!this.modalDocId) return;
+          try {
+            const res = await fetch(`/api/documents/${this.modalDocId}/tags`);
+            if (res.ok) {
+              this.modalDocTags = await res.json();
+            }
+          } catch (e) {
+            console.error('Failed to load doc tags', e);
+          }
+        },
+
+        isModalDocTagged(tagId) {
+          return this.modalDocTags.some(t => t.id === Number(tagId));
+        },
+
+        filteredAvailableTags() {
+          if (!this.tagSearchQuery || !this.tagSearchQuery.trim()) {
+            return this.allTags;
+          }
+          const q = this.tagSearchQuery.trim().toLowerCase();
+          return this.allTags.filter(t => t.name.toLowerCase().includes(q));
+        },
+
+        canCreateTagFromQuery() {
+          if (!this.tagSearchQuery || !this.tagSearchQuery.trim()) return false;
+          const q = this.tagSearchQuery.trim().toLowerCase();
+          return !this.allTags.some(t => t.name.toLowerCase() === q);
+        },
+
+        async toggleDocTag(docId, tagId) {
+          const isTagged = this.isModalDocTagged(tagId);
+          try {
+            if (isTagged) {
+              await fetch(`/api/documents/${docId}/tags/${tagId}`, { method: 'DELETE' });
+            } else {
+              await fetch(`/api/documents/${docId}/tags/${tagId}`, { method: 'POST' });
+            }
+            await this.loadModalDocTags();
+            await this.loadDocuments();
+            await this.loadTags();
+          } catch (e) {
+            showToast('Failed to update tag on document', 'error');
+          }
+        },
+
+        async removeDocTag(docId, tagId) {
+          try {
+            await fetch(`/api/documents/${docId}/tags/${tagId}`, { method: 'DELETE' });
+            await this.loadModalDocTags();
+            await this.loadDocuments();
+            await this.loadTags();
+          } catch (e) {
+            showToast('Failed to remove tag', 'error');
+          }
+        },
+
+        async createAndAddDocTag(docId, name) {
+          if (!name || !name.trim()) return;
+          try {
+            const createRes = await fetch('/api/tags', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: name.trim() })
+            });
+            if (!createRes.ok) {
+              const err = await createRes.json();
+              showToast(err.error || 'Failed to create tag', 'error');
+              return;
+            }
+            const newTag = await createRes.json();
+            await fetch(`/api/documents/${docId}/tags/${newTag.id}`, { method: 'POST' });
+            this.tagSearchQuery = '';
+            await this.loadTags();
+            await this.loadModalDocTags();
+            await this.loadDocuments();
+            showToast(`Tag "${newTag.name}" created and added`, 'success');
+          } catch (e) {
+            showToast('Failed to create and add tag', 'error');
+          }
+        },
+
+        async revealDocument(doc) {
+          if (!doc || !doc.id) return;
+          try {
+            const res = await fetch(`/api/documents/${doc.id}/reveal`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (res.ok) {
+              showToast('Revealed in explorer', 'info');
+            } else {
+              showToast(`Cannot reveal folder: ${data.error || 'Unknown error'}`, 'error');
+            }
+          } catch (e) {
+            showToast(`Cannot reveal folder: ${e.message}`, 'error');
+          }
+        },
+
+        getActiveFilterCount() {
+          let count = 0;
+          if (this.bookmarkFilter.search && this.bookmarkFilter.search.trim()) count++;
+          if (this.bookmarkFilter.groupId) count++;
+          if (this.bookmarkFilter.onlyOutdated) count++;
+          if (this.bookmarkFilter.onlyWithNotes) count++;
+          return count;
+        },
+
+        clearBookmarkFilter() {
+          this.bookmarkFilter = {
+            search: '',
+            groupId: '',
+            onlyOutdated: false,
+            onlyWithNotes: false
+          };
+        },
+
+        isGroupVisible(group) {
+          if (this.bookmarkFilter.groupId && String(group.id) !== String(this.bookmarkFilter.groupId)) {
+            return false;
+          }
+          const filterCount = this.getActiveFilterCount();
+          if (filterCount === 0) return true;
+
+          const search = (this.bookmarkFilter.search || '').trim().toLowerCase();
+          if (search && group.name.toLowerCase().includes(search)) {
+            return true;
+          }
+
+          const items = this.getFilteredGroupItems(group.id);
+          return items.length > 0;
+        },
+
+        getFilteredGroupItems(groupId) {
+          let items = this.groupItems[groupId] || [];
+          const search = (this.bookmarkFilter.search || '').trim().toLowerCase();
+
+          if (search) {
+            items = items.filter(item => {
+              const fileNameMatch = item.document?.file_name?.toLowerCase().includes(search);
+              const noteMatch = item.note?.toLowerCase().includes(search);
+              return fileNameMatch || noteMatch;
+            });
+          }
+
+          if (this.bookmarkFilter.onlyOutdated) {
+            items = items.filter(item => item.is_outdated);
+          }
+
+          if (this.bookmarkFilter.onlyWithNotes) {
+            items = items.filter(item => Boolean(item.note && item.note.trim()));
+          }
+
+          return items;
+        },
+
+        async loadOutdatedCount() {
+          try {
+            const res = await fetch('/api/bookmark-items/outdated-count');
+            if (res.ok) {
+              const data = await res.json();
+              this.outdatedCount = (data && typeof data.count === 'number') ? data.count : 0;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async updateBookmarkToLatest(itemId, groupId) {
+          try {
+            const res = await fetch(`/api/bookmark-items/${itemId}/update-to-latest`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (res.ok) {
+              showToast('Updated bookmark to latest version', 'success');
+              await this.loadGroupItems(groupId);
+              await this.loadBookmarkGroups();
+              await this.loadDocumentGroupMap();
+              await this.loadOutdatedCount();
+            } else if (res.status === 409 && data.error === 'ALREADY_IN_GROUP') {
+              showToast('Latest version was already in group. Removed duplicate.', 'info');
+              await this.loadGroupItems(groupId);
+              await this.loadBookmarkGroups();
+              await this.loadDocumentGroupMap();
+              await this.loadOutdatedCount();
+            } else {
+              showToast(data.error || 'Failed to update bookmark', 'error');
+            }
+          } catch (e) {
+            showToast(`Failed to update bookmark: ${e.message}`, 'error');
+          }
+        },
+
+        async openDocument(doc) {
+          if (!doc || !doc.id) return;
+          try {
+            const res = await fetch(`/api/documents/${doc.id}/open`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (res.ok) {
+              showToast(`Opening ${doc.file_name}...`, 'success');
+            } else {
+              showToast(`Cannot open file: ${data.error || 'Unknown error'}`, 'error');
+            }
+          } catch (e) {
+            showToast(`Cannot open file: ${e.message}`, 'error');
+          }
+        },
+
+        openRescanModal() {
+          this.scanRootDir = this.scanRootDir || window.location.origin;
+          this.showRescanModal = true;
+        },
+
+        async executeScan() {
+          if (!this.scanRootDir) {
+            showToast('Please specify root directory', 'warning');
+            return;
+          }
+          this.showRescanModal = false;
+          showToast('Scan started...', 'info');
+
+          try {
+            const res = await fetch('/api/scan', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ rootDir: this.scanRootDir })
+            });
+            const data = await res.json();
+            if (res.ok) {
+              showToast(`Scan complete: ${data.result.filesIndexed} files indexed`, 'success');
+              await this.loadModules();
+              await this.loadDocuments();
+            } else {
+              showToast(data.error || 'Scan failed', 'error');
+            }
+          } catch (e) {
+            showToast('Scan error occurred', 'error');
+          }
+        },
+
+        async triggerSync() {
+          showToast('Running git sync...', 'info');
+          try {
+            const res = await fetch('/api/sync', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+              showToast('Git sync succeeded!', 'success');
+              await this.loadModules();
+              await this.loadDocuments();
+            } else {
+              showToast(data.error || 'Git sync failed', 'error');
+            }
+          } catch (e) {
+            showToast('Git sync request failed', 'error');
+          }
+        },
+
+        // ==========================================
+        // Sub-Task 5.2: Drag & Drop Tags Methods
+        // ==========================================
+        onTagDragStart(e, tag) {
+          e.dataTransfer.setData('application/x-tag-id', tag.id);
+          e.dataTransfer.setData('text/plain', String(tag.id));
+          e.dataTransfer.effectAllowed = 'copy';
+          this.draggingTagId = tag.id;
+          this.draggingTagColor = tag.color;
+        },
+
+        onTagDragEnd(e) {
+          this.draggingTagId = null;
+          this.draggingTagColor = null;
+          this.draggedOverDocId = null;
+        },
+
+        onDocDragOver(e, doc) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          this.draggedOverDocId = doc.id;
+        },
+
+        onDocDragLeave(e, doc) {
+          if (this.draggedOverDocId === doc.id) {
+            this.draggedOverDocId = null;
+          }
+        },
+
+        async onDocDrop(e, doc) {
+          e.preventDefault();
+          this.draggedOverDocId = null;
+          let tagId = e.dataTransfer.getData('application/x-tag-id');
+          if (!tagId) tagId = e.dataTransfer.getData('text/plain');
+          if (!tagId && this.draggingTagId) tagId = this.draggingTagId;
+          if (!tagId) return;
+          const numTagId = Number(tagId);
+
+          const docTags = doc.tags || [];
+          if (docTags.some(t => t.id === numTagId)) {
+            showToast('Tag already applied', 'info');
+            return;
+          }
+
+          try {
+            const res = await fetch(`/api/documents/${doc.id}/tags/${numTagId}`, { method: 'POST' });
+            if (res.ok) {
+              showToast('Tag applied to document', 'success');
+              await this.loadDocuments();
+              await this.loadTags();
+            } else {
+              const data = await res.json();
+              if (res.status === 409) {
+                showToast('Tag already applied', 'info');
+              } else {
+                showToast(data.error || 'Failed to apply tag', 'error');
+              }
+            }
+          } catch (err) {
+            showToast('Error applying tag', 'error');
+          }
+        },
+
+        // ==========================================
+        // Sub-Task 5.3: Context Menu Methods
+        // ==========================================
+        copyToClipboard(text, msg) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => {
+              showToast(msg || 'Copied to clipboard', 'info');
+            }).catch(() => {
+              const ta = document.createElement('textarea');
+              ta.value = text;
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand('copy');
+              document.body.removeChild(ta);
+              showToast(msg || 'Copied to clipboard', 'info');
+            });
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast(msg || 'Copied to clipboard', 'info');
+          }
+        },
+
+        openDocMenu(e, doc) {
+          if (!window.ContextMenu) return;
+          const items = [
+            { label: 'Open', icon: '📂', action: () => this.openDocument(doc) },
+            { label: 'Reveal in Folder', icon: '📁', action: () => this.revealDocument(doc) },
+            { label: 'Preview in Browser', icon: '👁️', action: () => this.openPreviewModal(doc) },
+            { label: 'Bookmark...', icon: '🔖', action: () => this.openAddBookmarkModal(doc) },
+            { label: 'Version History', icon: '🕐', action: () => this.openVersionModal(doc.id, doc.id) },
+            { divider: true },
+            { label: 'Copy file path', icon: '📋', action: () => this.copyToClipboard(doc.file_path, 'File path copied') },
+            { label: 'Copy file name', icon: '📋', action: () => this.copyToClipboard(doc.file_name, 'File name copied') },
+            { divider: true },
+            { 
+              label: 'Manage Tags', 
+              icon: '🏷️', 
+              action: () => {
+                this.modalDocId = doc.id;
+                this.loadModalDocTags();
+                this.showTagManageModal = true;
+              } 
+            }
+          ];
+          window.ContextMenu.open(e.clientX, e.clientY, items);
+        },
+
+        openBookmarkMenu(e, item, group) {
+          if (!window.ContextMenu) return;
+          const doc = item.document;
+          const items = [
+            { label: 'Open', icon: '📂', action: () => this.openDocument(doc) },
+            { label: 'Reveal in Folder', icon: '📁', action: () => this.revealDocument(doc) },
+            { label: 'Preview in Browser', icon: '👁️', action: () => this.openPreviewModal(doc) },
+            { label: 'Version History', icon: '🕐', action: () => this.openVersionModal(doc.id, doc.id) },
+            { divider: true },
+            { label: 'Copy file path', icon: '📋', action: () => this.copyToClipboard(doc.file_path, 'File path copied') }
+          ];
+
+          if (item.is_outdated) {
+            items.push({ divider: true });
+            items.push({
+              label: 'Update to Latest',
+              icon: '⚠️',
+              action: () => this.updateBookmarkToLatest(item.item_id, group.id)
+            });
+          }
+
+          items.push({ divider: true });
+          items.push({
+            label: 'Remove from Group',
+            icon: '🗑️',
+            danger: true,
+            action: () => this.removeItemFromGroup(item.item_id, group.id)
+          });
+
+          window.ContextMenu.open(e.clientX, e.clientY, items);
+        },
+
+        openTagMenu(e, tag) {
+          if (!window.ContextMenu) return;
+          const items = [
+            { 
+              label: 'Rename', 
+              icon: '✏️', 
+              action: () => {
+                const newName = prompt('Enter new tag name:', tag.name);
+                if (newName && newName.trim() && newName.trim() !== tag.name) {
+                  fetch(`/api/tags/${tag.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName.trim() })
+                  }).then(async res => {
+                    if (res.ok) {
+                      showToast('Tag renamed', 'success');
+                      await this.loadTags();
+                      await this.loadDocuments();
+                    } else {
+                      const d = await res.json();
+                      showToast(d.error || 'Failed to rename tag', 'error');
+                    }
+                  });
+                }
+              }
+            },
+            { 
+              label: 'Change color', 
+              icon: '🎨', 
+              action: () => {
+                const newColor = prompt('Enter HEX color (e.g. #6366f1):', tag.color);
+                if (newColor && /^#[0-9A-Fa-f]{6}$/.test(newColor.trim())) {
+                  this.updateTagColorGlobal(tag, newColor.trim());
+                }
+              }
+            },
+            { label: 'Copy tag name', icon: '📋', action: () => this.copyToClipboard(tag.name, 'Tag name copied') },
+            { divider: true },
+            { label: 'Delete tag', icon: '🗑️', danger: true, action: () => this.deleteTagGlobal(tag.id) }
+          ];
+          window.ContextMenu.open(e.clientX, e.clientY, items);
+        },
+
+        // ==========================================
+        // Sub-Task 5.4: Bookmark Group Full View Modal Methods
+        // ==========================================
+        openGroupDetailModal(group) {
+          this.selectedGroupDetail = group;
+          this.groupDetailSearch = '';
+          this.groupDetailSort = 'name';
+          this.groupDetailFilter = 'all';
+          this.selectedGroupDetailItemIds = [];
+          this.showGroupDetailModal = true;
+          this.loadGroupDetailItems(group.id);
+        },
+
+        async loadGroupDetailItems(groupId) {
+          try {
+            const res = await fetch(`/api/bookmark-groups/${groupId}/items`);
+            const data = await res.json();
+            this.groupDetailItems = Array.isArray(data) ? data : [];
+          } catch (e) {
+            console.error(e);
+            this.groupDetailItems = [];
+          }
+        },
+
+        filteredSortedGroupDetailItems() {
+          let items = [...this.groupDetailItems];
+
+          // Filter
+          if (this.groupDetailFilter === 'outdated') {
+            items = items.filter(i => i.is_outdated);
+          } else if (this.groupDetailFilter === 'notes') {
+            items = items.filter(i => Boolean(i.note && i.note.trim()));
+          }
+
+          if (this.groupDetailSearch && this.groupDetailSearch.trim()) {
+            const q = this.groupDetailSearch.trim().toLowerCase();
+            items = items.filter(i => {
+              const fn = i.document?.file_name?.toLowerCase() || '';
+              const note = i.note?.toLowerCase() || '';
+              return fn.includes(q) || note.includes(q);
+            });
+          }
+
+          // Sort
+          if (this.groupDetailSort === 'name') {
+            items.sort((a, b) => (a.document?.file_name || '').localeCompare(b.document?.file_name || ''));
+          } else if (this.groupDetailSort === 'date' || this.groupDetailSort === 'version_date') {
+            items.sort((a, b) => (b.document?.version_date || '').localeCompare(a.document?.version_date || ''));
+          } else if (this.groupDetailSort === 'added') {
+            items.sort((a, b) => (b.item_id || 0) - (a.item_id || 0));
+          }
+
+          return items;
+        },
+
+        toggleGroupDetailItemSelect(id) {
+          const idx = this.selectedGroupDetailItemIds.indexOf(id);
+          if (idx > -1) {
+            this.selectedGroupDetailItemIds.splice(idx, 1);
+          } else {
+            this.selectedGroupDetailItemIds.push(id);
+          }
+        },
+
+        toggleSelectAllGroupDetail(checked) {
+          const visible = this.filteredSortedGroupDetailItems();
+          if (checked) {
+            this.selectedGroupDetailItemIds = visible.map(i => i.item_id);
+          } else {
+            this.selectedGroupDetailItemIds = [];
+          }
+        },
+
+        isAllGroupDetailSelected() {
+          const visible = this.filteredSortedGroupDetailItems();
+          return visible.length > 0 && visible.every(i => this.selectedGroupDetailItemIds.includes(i.item_id));
+        },
+
+        async bulkRemoveSelectedGroupDetailItems() {
+          if (this.selectedGroupDetailItemIds.length === 0) return;
+          if (!confirm(`Remove ${this.selectedGroupDetailItemIds.length} item(s) from group?`)) return;
+          for (const itemId of this.selectedGroupDetailItemIds) {
+            try {
+              await fetch(`/api/bookmark-items/${itemId}`, { method: 'DELETE' });
+            } catch (e) {
+              console.error(e);
+            }
+          }
+          showToast('Selected items removed', 'info');
+          this.selectedGroupDetailItemIds = [];
+          await this.loadGroupDetailItems(this.selectedGroupDetail.id);
+          await this.loadBookmarkGroups();
+          await this.loadDocumentGroupMap();
+        },
+
+        async bulkUpdateSelectedToLatest() {
+          const outdatedInSelection = this.groupDetailItems.filter(i => this.selectedGroupDetailItemIds.includes(i.item_id) && i.is_outdated);
+          if (outdatedInSelection.length === 0) {
+            showToast('No outdated items selected', 'info');
+            return;
+          }
+          for (const item of outdatedInSelection) {
+            try {
+              await fetch(`/api/bookmark-items/${item.item_id}/update-to-latest`, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' } 
+              });
+            } catch (e) {
+              console.error(e);
+            }
+          }
+          showToast(`Updated ${outdatedInSelection.length} item(s) to latest`, 'success');
+          await this.loadGroupDetailItems(this.selectedGroupDetail.id);
+          await this.loadBookmarkGroups();
+          await this.loadDocumentGroupMap();
+          await this.loadOutdatedCount();
+        },
+
+        async saveItemNoteInline(itemId, note) {
+          try {
+            const res = await fetch(`/api/bookmark-items/${itemId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ note })
+            });
+            if (res.ok) {
+              showToast('Note updated', 'success');
+              if (this.selectedGroupDetail) {
+                await this.loadGroupDetailItems(this.selectedGroupDetail.id);
+              }
+            } else {
+              showToast('Failed to save note', 'error');
+            }
+          } catch (e) {
+            showToast('Error saving note', 'error');
+          }
+        },
+
+        formatDate(timestamp) {
+          if (!timestamp) return '-';
+          try {
+            const d = new Date(timestamp);
+            if (isNaN(d.getTime())) return '-';
+            return (d.getMonth() + 1).toString().padStart(2, '0') + '-' + d.getDate().toString().padStart(2, '0');
+          } catch (e) {
+            return String(timestamp);
+          }
+        },
+
+        // ==========================================
+        // Sub-Task 5.5: Web File Preview Methods
+        // ==========================================
+        async openPreviewModal(doc) {
+          if (!doc || !doc.id) return;
+          this.currentPreviewDoc = doc;
+          this.previewData = null;
+          this.loadingPreview = true;
+          this.activeSheetIndex = 0;
+          this.showPreviewModal = true;
+          try {
+            const res = await fetch(`/api/documents/${doc.id}/preview`);
+            if (res.status === 413) {
+              showToast('File too large for in-browser preview (>15MB)', 'warning');
+              this.previewData = { type: 'unsupported', error: 'File exceeds maximum preview size (15MB).' };
+              return;
+            }
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              this.previewData = { type: 'unsupported', error: err.error || 'Preview not available for this file.' };
+              return;
+            }
+            this.previewData = await res.json();
+          } catch (err) {
+            this.previewData = { type: 'unsupported', error: err.message || 'Error loading preview' };
+          } finally {
+            this.loadingPreview = false;
+          }
+        }
+      };
+    }
+  </script>
+</body>
+</html>
