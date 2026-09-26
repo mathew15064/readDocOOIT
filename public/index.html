@@ -362,7 +362,7 @@
                           <template x-if="doc.is_latest === 0">
                             <span class="text-warning text-xs cursor-help flex-shrink-0 font-mono font-bold" title="Newer version available">[!]</span>
                           </template>
-                          <span class="font-sans text-[14px] text-body font-medium truncate cursor-pointer hover:text-white" @click="openVersionModal(doc.id, doc.id)" :title="`Click to view version history: ${doc.file_name}`" x-text="doc.file_name"></span>
+                          <span class="font-sans text-[14px] text-body font-medium truncate cursor-pointer hover:text-white" @click="openVersionModal(doc.id, doc.id)" :title="`Click to view version history: ${doc.file_name}`" x-html="highlightMatch(doc.file_name)"></span>
                         </div>
                         <div class="font-mono text-[12px] text-muted truncate" :title="doc.file_path" x-text="doc.file_path"></div>
                       </div>
@@ -794,41 +794,52 @@
             Add to <span x-text="newBookmark.existingBookmarks && newBookmark.existingBookmarks.length > 0 ? 'another group' : 'a group'"></span>:
           </label>
 
-          <!-- Selected group chip -->
-          <template x-if="!newBookmark.createNew && selectedGroupInNewBookmark()">
-            <div class="flex items-center justify-between p-3 bg-surface-elevated border border-primary/40 rounded-lg">
-              <div class="flex items-center space-x-2.5 min-w-0">
-                <span class="w-3 h-3 rounded-full flex-shrink-0" :style="`background-color: ${selectedGroupInNewBookmark().color};`"></span>
-                <span class="text-sm font-medium text-white truncate" x-text="selectedGroupInNewBookmark().name"></span>
-                <span class="text-xs text-muted" x-text="`(${selectedGroupInNewBookmark().item_count || 0})`"></span>
-              </div>
-              <button 
-                @click="openGroupPicker('addBookmark')" 
-                class="px-2.5 py-1 text-[12px] font-medium bg-surface-card hover:bg-surface-elevated text-body border border-hairline rounded-md transition flex-shrink-0">
-                Change
-              </button>
-            </div>
-          </template>
+          <!-- Choose an existing group — stays visible and clickable as long as
+               one is still available to add to, even while "Create new group"
+               is checked below, so there's always a way back to it (picking
+               one here switches the mode back automatically). Dimmed, not
+               hidden, when "Create new group" is the active choice. -->
+          <template x-if="newBookmark.availableGroups.length > 0">
+            <div>
+              <!-- Selected group chip -->
+              <template x-if="selectedGroupInNewBookmark()">
+                <div class="flex items-center justify-between p-3 border rounded-lg transition"
+                  :class="newBookmark.createNew ? 'bg-surface-card border-hairline opacity-50 hover:opacity-100' : 'bg-surface-elevated border-primary/40'">
+                  <div class="flex items-center space-x-2.5 min-w-0">
+                    <span class="w-3 h-3 rounded-full flex-shrink-0" :style="`background-color: ${selectedGroupInNewBookmark().color};`"></span>
+                    <span class="text-sm font-medium text-white truncate" x-text="selectedGroupInNewBookmark().name"></span>
+                    <span class="text-xs text-muted" x-text="`(${selectedGroupInNewBookmark().item_count || 0})`"></span>
+                  </div>
+                  <button
+                    @click="openGroupPicker('addBookmark')"
+                    class="px-2.5 py-1 text-[12px] font-medium bg-surface-card hover:bg-surface-elevated text-body border border-hairline rounded-md transition flex-shrink-0">
+                    Change
+                  </button>
+                </div>
+              </template>
 
-          <!-- No selection yet -->
-          <template x-if="!newBookmark.createNew && !selectedGroupInNewBookmark()">
-            <button 
-              @click="openGroupPicker('addBookmark')" 
-              class="w-full p-3 bg-surface-card hover:bg-surface-elevated text-body border border-dashed border-hairline-strong rounded-lg transition flex items-center justify-center gap-2 text-sm font-medium">
-              <span class="font-mono text-[12px] text-muted">[+]</span>
-              <span>Choose a group</span>
-            </button>
+              <!-- No selection yet -->
+              <template x-if="!selectedGroupInNewBookmark()">
+                <button
+                  @click="openGroupPicker('addBookmark')"
+                  class="w-full p-3 border border-dashed border-hairline-strong rounded-lg transition flex items-center justify-center gap-2 text-sm font-medium"
+                  :class="newBookmark.createNew ? 'bg-surface-card text-muted opacity-50 hover:opacity-100' : 'bg-surface-card hover:bg-surface-elevated text-body'">
+                  <span class="font-mono text-[12px] text-muted">[+]</span>
+                  <span>Choose a group</span>
+                </button>
+              </template>
+            </div>
           </template>
 
           <!-- Create new group toggle -->
           <label class="flex items-center space-x-2.5 p-2.5 rounded-lg border transition cursor-pointer mt-2"
             :class="newBookmark.createNew ? 'bg-surface-elevated border-primary text-white' : 'bg-surface-card hover:bg-surface-elevated border-hairline'">
-            <input 
-              type="radio" 
-              name="bookmarkGroupMode" 
-              @change="newBookmark.createNew = true; newBookmark.selectedGroupId = null" 
-              :checked="newBookmark.createNew" 
-              class="text-primary bg-surface-elevated border-hairline" 
+            <input
+              type="radio"
+              name="bookmarkGroupMode"
+              @change="newBookmark.createNew = true; newBookmark.forcedCreateNew = false; newBookmark.selectedGroupId = null"
+              :checked="newBookmark.createNew"
+              class="text-primary bg-surface-elevated border-hairline"
             />
             <span class="text-sm font-medium text-primary">[+] Create new group</span>
           </label>
@@ -2070,6 +2081,7 @@
             availableGroups: [],
             selectedGroupId: null,
             createNew: false,
+            forcedCreateNew: false,
             newGroupName: '',
             newGroupColor: '#6366f1',
             note: ''
@@ -2100,9 +2112,20 @@
             this.newBookmark.selectedGroupId = null;
           }
 
-          // 4. If no groups left, force createNew
-          if (available.length === 0 && !this.newBookmark.createNew) {
-            this.newBookmark.createNew = true;
+          // 4. If no groups exist to choose from, force "create new" — and
+          // just as importantly, undo that forced state once a group
+          // becomes choosable again (e.g. after removing a bookmark frees
+          // up its group). Only the auto-forced state is cleared here; a
+          // deliberate manual pick of "create new" (forcedCreateNew=false)
+          // is left alone even if other groups are available.
+          if (available.length === 0) {
+            if (!this.newBookmark.createNew) {
+              this.newBookmark.createNew = true;
+              this.newBookmark.forcedCreateNew = true;
+            }
+          } else if (this.newBookmark.forcedCreateNew) {
+            this.newBookmark.createNew = false;
+            this.newBookmark.forcedCreateNew = false;
           }
         },
 
@@ -2138,6 +2161,7 @@
         selectGroupFromPicker(groupId) {
           this.newBookmark.selectedGroupId = groupId;
           this.newBookmark.createNew = false;
+          this.newBookmark.forcedCreateNew = false;
           this.closeGroupPicker();
         },
 
@@ -2151,7 +2175,6 @@
         },
 
         selectedGroupInNewBookmark() {
-          if (this.newBookmark.createNew) return null;
           return this.bookmarkGroups.find(g => g.id === this.newBookmark.selectedGroupId) || null;
         },
 
@@ -2180,6 +2203,7 @@
               }
               targetGroupId = newGrp.id;
               this.newBookmark.createNew = false;
+              this.newBookmark.forcedCreateNew = false;
               this.newBookmark.newGroupName = '';
             } catch (e) {
               showToast('Error creating group', 'error');
@@ -2972,6 +2996,23 @@
           }
         },
 
+        // Wraps every case-insensitive occurrence of the active search
+        // query in <mark> for x-html rendering. Escapes the source text
+        // first so a filename can't inject markup, and escapes the query
+        // for use inside a RegExp so characters like "(" or "." in it are
+        // matched literally instead of as regex syntax.
+        highlightMatch(text) {
+          const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+          }[c]));
+          const safeText = escapeHtml(text || '');
+          const q = (this.query || '').trim();
+          if (!q) return safeText;
+          const escapedQuery = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`(${escapedQuery})`, 'ig');
+          return safeText.replace(regex, '<mark class="bg-primary/30 text-primary rounded-sm px-0.5">$1</mark>');
+        },
+
         // ==========================================
         // Sub-Task 5.3: Context Menu Methods
         // ==========================================
@@ -3001,18 +3042,20 @@
 
         openDocMenu(e, doc) {
           if (!window.ContextMenu) return;
+          const hasBookmark = (this.documentGroupMap[doc.id] || []).length > 0;
           const items = [
             { label: '[>] Open', action: () => this.openDocument(doc) },
             { label: '[~] Reveal in Folder', action: () => this.revealDocument(doc) },
             { label: '[!] Preview in Browser', action: () => this.openPreviewModal(doc) },
-            { label: '[+] Bookmark...', action: () => this.openAddBookmarkModal(doc) },
+            { label: hasBookmark ? '[~] Edit Bookmark...' : '[+] Bookmark...', action: () => this.openAddBookmarkModal(doc) },
             { label: '[-] Version History', action: () => this.openVersionModal(doc.id, doc.id) },
             { divider: true },
             { label: '[#] Copy file path', action: () => this.copyToClipboard(doc.file_path, 'File path copied') },
+            { label: '[#] Copy relative path', action: () => this.copyToClipboard(doc.relative_path || doc.file_path, 'Relative path copied') },
             { label: '[#] Copy file name', action: () => this.copyToClipboard(doc.file_name, 'File name copied') },
             { divider: true },
-            { 
-              label: '[T] Manage Tags', 
+            {
+              label: '[T] Manage Tags',
               action: () => this.openDocTagModal(doc)
             }
           ];
@@ -3028,7 +3071,8 @@
             { label: '[!] Preview in Browser', action: () => this.openPreviewModal(doc) },
             { label: '[-] Version History', action: () => this.openVersionModal(doc.id, doc.id) },
             { divider: true },
-            { label: '[#] Copy file path', action: () => this.copyToClipboard(doc.file_path, 'File path copied') }
+            { label: '[#] Copy file path', action: () => this.copyToClipboard(doc.file_path, 'File path copied') },
+            { label: '[#] Copy relative path', action: () => this.copyToClipboard(doc.relative_path || doc.file_path, 'Relative path copied') }
           ];
 
           if (item.is_outdated) {

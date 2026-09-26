@@ -1,5 +1,6 @@
 // src/modules/search/index.js
 const db = require('../../db');
+const { toRelativePath } = require('../../utils/relative-path');
 
 /**
  * Search and filter documents with optional pagination.
@@ -88,6 +89,10 @@ function searchDocuments({ q = '', module = '', only_latest = false, page = 1, p
   `);
 
   const documents = dataStmt.all(params);
+
+  for (const doc of documents) {
+    doc.relative_path = toRelativePath(doc.file_path);
+  }
 
   // Attach tags to each document
   if (documents.length > 0) {

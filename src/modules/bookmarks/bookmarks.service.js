@@ -1,5 +1,6 @@
 // src/modules/bookmarks/bookmarks.service.js
 const db = require('../../db');
+const { toRelativePath } = require('../../utils/relative-path');
 
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -164,6 +165,7 @@ async function listGroupItems(groupId) {
         id: r.doc_id,
         file_name: r.file_name,
         file_path: r.file_path,
+        relative_path: toRelativePath(r.file_path),
         file_ext: r.file_ext,
         file_size: r.file_size,
         mtime: r.mtime,
