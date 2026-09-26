@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // Cache WSL detection result
 let _isWSL = null;
@@ -34,7 +34,7 @@ function convertToWindowsPath(filePath) {
   // If path already on a mounted drive, use wslpath
   if (/^\/mnt\/[a-z]\//.test(filePath)) {
     try {
-      const winPath = execSync(`wslpath -w '${filePath}'`).toString().trim();
+      const winPath = execFileSync('wslpath', ['-w', filePath]).toString().trim();
       return { path: winPath, tempCopied: false };
     } catch (e) {
       // fallback to copy
@@ -57,7 +57,7 @@ function convertToWindowsPath(filePath) {
   if (!fs.existsSync(destPath)) {
     fs.copyFileSync(filePath, destPath);
   }
-  const winPath = execSync(`wslpath -w '${destPath}'`).toString().trim();
+  const winPath = execFileSync('wslpath', ['-w', destPath]).toString().trim();
   return { path: winPath, tempCopied: true };
 }
 

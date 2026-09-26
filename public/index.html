@@ -304,6 +304,17 @@
             <h2 class="font-semibold text-white text-sm">Documents List</h2>
             <span class="text-xs px-2.5 py-0.5 rounded-md bg-surface-elevated text-muted font-sans" x-text="`${totalDocs} total`"></span>
           </div>
+          <div class="flex items-center space-x-2" x-show="totalPages > 1">
+            <button type="button"
+              @click="goToPage(currentPage - 1)"
+              :disabled="currentPage <= 1"
+              class="px-2 py-1 text-xs font-sans rounded-md border border-hairline text-muted hover:text-white hover:bg-surface-elevated disabled:opacity-40 disabled:cursor-not-allowed transition-colors">‹ Prev</button>
+            <span class="text-xs text-muted font-sans" x-text="`Page ${currentPage} of ${totalPages}`"></span>
+            <button type="button"
+              @click="goToPage(currentPage + 1)"
+              :disabled="currentPage >= totalPages"
+              class="px-2 py-1 text-xs font-sans rounded-md border border-hairline text-muted hover:text-white hover:bg-surface-elevated disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Next ›</button>
+          </div>
         </div>
 
         <div class="flex-1 min-h-0 overflow-auto scrollbar-thin">
@@ -1796,6 +1807,9 @@
         distinctVersions: [],
         documents: [],
         totalDocs: 0,
+        totalPages: 1,
+        currentPage: 1,
+        pageSize: 100,
         modules: [],
 
         // Bookmark Groups State per 2.8 & Outdated Detection per 3.3
@@ -1951,13 +1965,28 @@
           }
         },
 
+        // Reloads from page 1 — call this after changing a filter/search/sort.
         async loadDocuments() {
+          this.currentPage = 1;
+          await this.fetchDocuments();
+        },
+
+        // Navigates to a specific page without resetting filters.
+        async goToPage(p) {
+          if (p < 1 || p > this.totalPages || p === this.currentPage) return;
+          this.currentPage = p;
+          await this.fetchDocuments();
+        },
+
+        async fetchDocuments() {
           try {
             const params = new URLSearchParams({
               q: this.query,
               module: this.selectedModule,
               only_latest: this.onlyLatest,
               sort: this.sortBy,
+              page: this.currentPage,
+              pageSize: this.pageSize,
             });
             if (this.selectedTagIds.length > 0) {
               params.append('tagIds', this.selectedTagIds.join(','));
@@ -1969,6 +1998,8 @@
             const data = await res.json();
             this.documents = data.documents || [];
             this.totalDocs = data.total || 0;
+            this.totalPages = data.totalPages || 1;
+            if (this.currentPage > this.totalPages) this.currentPage = this.totalPages;
             await this.loadDocumentGroupMap();
           } catch (e) {
             showToast('Failed to load documents', 'error');

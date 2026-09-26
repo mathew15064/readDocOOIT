@@ -12,8 +12,14 @@ router.get('/documents/:id/raw', async (req, res) => {
     const { id } = req.params;
     const { stream, mimeType, fileName } = await previewService.getFileRaw(id, process.env);
 
+    // ASCII fallback for old clients (`?` for anything non-ASCII) plus a
+    // filename*= UTF-8 form so accented/non-Latin names come through intact.
+    const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'");
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
     stream.pipe(res);
   } catch (err) {
     if (err.message === 'DOC_NOT_FOUND' || err.message === 'FILE_NOT_FOUND') {

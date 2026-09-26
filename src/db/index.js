@@ -2,6 +2,7 @@
 const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
+const { runMigrations } = require('./run-migrations');
 
 // Ensure data directory exists (used for production)
 const dataDir = path.resolve(process.cwd(), 'data');
@@ -20,15 +21,9 @@ if (process.env.NODE_ENV === 'test') {
 
 db.pragma('foreign_keys = ON;');
 
-// Run migrations (all .sql files in src/db/migrations)
+// Run any pending migrations (tracked in schema_migrations so each file runs once)
 const migrationsDir = path.resolve(__dirname, 'migrations');
-if (fs.existsSync(migrationsDir)) {
-  const migrationFiles = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
-  migrationFiles.forEach(file => {
-    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
-    db.exec(sql);
-  });
-}
+runMigrations(db, migrationsDir);
 
 // Preserve original exec for raw SQL execution
 const originalExec = db.exec.bind(db);

@@ -6,10 +6,13 @@
   "scripts": {
     "shots": "node scripts/capture-screenshots.mjs",
     "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
     "migrate": "node scripts/migrate.js",
+    "scan": "node scripts/scan-cli.js",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test"
   },
 
@@ -20,12 +23,12 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
-    "p-limit": "^4.0.0",
     "pino": "^9.2.0",
     "pino-http": "^10.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
+    "@vitest/coverage-v8": "^2.0.0",
     "supertest": "^7.0.0",
     "vitest": "^2.0.0"
   }

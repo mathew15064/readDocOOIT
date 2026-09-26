@@ -1,6 +1,38 @@
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+
+// Windows/macOS filesystems are case-insensitive; comparing raw strings with
+// startsWith() both misses same-path-different-case matches (false 403s) and
+// can be fooled by a sibling dir that merely shares a prefix, e.g. root
+// "/docs" vs a target "/docs-private/secret.txt".
+function isPathInsideRoot(resolved, rootDir) {
+  const root = path.resolve(rootDir);
+  const rel = path.relative(root, resolved);
+  const isCaseInsensitiveFs = process.platform === 'win32' || process.platform === 'darwin';
+  const relToCheck = isCaseInsensitiveFs ? rel.toLowerCase() : rel;
+  return relToCheck === '' || (!relToCheck.startsWith('..') && !path.isAbsolute(rel));
+}
+
+// Spawn a detached child and resolve/reject based on whether the OS actually
+// managed to start it, instead of assuming success the instant spawn() returns.
+function spawnDetached(cmd, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', ...options });
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    child.on('spawn', () => {
+      if (settled) return;
+      settled = true;
+      if (typeof child.unref === 'function') child.unref();
+      resolve(child);
+    });
+  });
+}
 
 /**
  * Open a file using the OS default application.
@@ -12,7 +44,7 @@ async function openFile(filePath, env) {
   const resolved = path.resolve(filePath);
 
   // Path traversal guard
-  if (!resolved.startsWith(path.resolve(env.DOC_ROOT_DIR))) {
+  if (!isPathInsideRoot(resolved, env.DOC_ROOT_DIR)) {
     throw new Error('PATH_OUTSIDE_ROOT');
   }
 
@@ -35,13 +67,7 @@ async function openFile(filePath, env) {
     args = [resolved];
   }
 
-  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
-  if (child && typeof child.on === 'function') {
-    child.on('error', () => { });
-  }
-  if (child && typeof child.unref === 'function') {
-    child.unref();
-  }
+  await spawnDetached(cmd, args, { windowsHide: true });
 
   return { opened: true, filePath: resolved };
 }
@@ -53,7 +79,7 @@ async function openFile(filePath, env) {
 async function openWith(filePath, opener, env) {
   const resolved = path.resolve(filePath);
   // Path traversal guard
-  if (!resolved.startsWith(path.resolve(env.DOC_ROOT_DIR))) {
+  if (!isPathInsideRoot(resolved, env.DOC_ROOT_DIR)) {
     throw new Error('PATH_OUTSIDE_ROOT');
   }
   const stat = await fs.promises.stat(resolved);
@@ -76,20 +102,14 @@ async function openWith(filePath, opener, env) {
     return openFile(filePath, env);
   }
 
-  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
-  if (child && typeof child.on === 'function') child.on('error', () => { });
-  if (child && typeof child.unref === 'function') child.unref();
+  await spawnDetached(cmd, args, { windowsHide: true });
 
   return { opened: true, openerId: opener.id, path: resolved };
 }
 
 async function revealInFolder(filePath, env) {
-  const path = require('path');
-  const fs = require('fs');
-  const { spawn, execSync } = require('child_process');
-
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(env.DOC_ROOT_DIR))) {
+  if (!isPathInsideRoot(resolved, env.DOC_ROOT_DIR)) {
     throw new Error('PATH_OUTSIDE_ROOT');
   }
   const stat = await fs.promises.stat(resolved);
@@ -104,21 +124,10 @@ async function revealInFolder(filePath, env) {
   let targetPath = resolved;
 
   if (isWin) {
-    return new Promise((resolve, reject) => {
-      // shell:true → Node routes through cmd.exe which handles Windows quoting correctly.
-      // cmd.exe strips the outer quotes and passes /select + path properly to Explorer.
-      const child = spawn(`explorer.exe /select,"${resolved}"`, {
-        detached: true,
-        stdio: 'ignore',
-        shell: true,
-        windowsHide: true,
-      });
-      child.on('error', reject);
-      child.on('spawn', () => {
-        child.unref();
-        resolve({ revealed: true, path: resolved, targetPath: resolved, folder: path.dirname(resolved) });
-      });
-    });
+    // shell:true → Node routes through cmd.exe which handles Windows quoting correctly.
+    // cmd.exe strips the outer quotes and passes /select + path properly to Explorer.
+    await spawnDetached(`explorer.exe /select,"${resolved}"`, [], { shell: true, windowsHide: true });
+    return { revealed: true, path: resolved, targetPath: resolved, folder: path.dirname(resolved) };
   }
 
   if (isWSL) {
@@ -127,7 +136,7 @@ async function revealInFolder(filePath, env) {
 
     if (mountMatch) {
       try {
-        const winPath = execSync(`wslpath -w "${resolved}"`, { encoding: 'utf8' }).trim();
+        const winPath = execFileSync('wslpath', ['-w', resolved], { encoding: 'utf8' }).trim();
         cmd = 'explorer.exe';
         args = [`/select,"${winPath}"`];
         targetPath = winPath;
@@ -145,30 +154,23 @@ async function revealInFolder(filePath, env) {
       targetPath = uncPath;
     }
 
-    return new Promise((resolve, reject) => {
-      const child = spawn(cmd, args, {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      });
-      child.on('error', (err) => reject(err));
-      child.on('spawn', () => {
-        child.unref();
-        resolve({ revealed: true, path: resolved, targetPath, folder: path.dirname(resolved) });
-      });
-    });
+    await spawnDetached(cmd, args, { windowsHide: true });
+    return { revealed: true, path: resolved, targetPath, folder: path.dirname(resolved) };
   }
 
   if (isMac) {
-    const child = spawn('open', ['-R', resolved], { detached: true, stdio: 'ignore' });
-    child.unref();
+    await spawnDetached('open', ['-R', resolved]);
     return { revealed: true, path: resolved, targetPath: resolved, folder: path.dirname(resolved) };
   }
 
-  // Plain Linux
-  const child = spawn('xdg-open', [path.dirname(resolved)], { detached: true, stdio: 'ignore' });
-  child.unref();
+  // Plain Linux — xdg-open may not be installed; surface that instead of crashing the server.
+  try {
+    await spawnDetached('xdg-open', [path.dirname(resolved)]);
+  } catch (err) {
+    const e = new Error(`REVEAL_FAILED: ${err.message}`);
+    throw e;
+  }
   return { revealed: true, path: resolved, targetPath: path.dirname(resolved), folder: path.dirname(resolved) };
 }
 
-module.exports = { openFile, openWith, revealInFolder };
+module.exports = { openFile, openWith, revealInFolder, isPathInsideRoot };

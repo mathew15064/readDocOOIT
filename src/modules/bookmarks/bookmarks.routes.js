@@ -72,6 +72,9 @@ router.delete('/bookmark-groups/:id', async (req, res) => {
     const result = await bookmarksService.deleteGroup(id);
     res.json(result);
   } catch (err) {
+    if (err.message === 'GROUP_NOT_FOUND') {
+      return res.status(404).json({ error: 'Group not found' });
+    }
     res.status(500).json({ error: err.message });
   }
 });

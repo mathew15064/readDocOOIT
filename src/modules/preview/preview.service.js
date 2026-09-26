@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const db = require('../../db');
+const { isPathInsideRoot } = require('../opener/opener.service');
 
 const MIME_MAP = {
   pdf: 'application/pdf',
@@ -16,6 +17,7 @@ const MIME_MAP = {
   md: 'text/markdown; charset=utf-8',
   csv: 'text/csv; charset=utf-8',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
   xls: 'application/vnd.ms-excel',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   doc: 'application/msword'
@@ -35,7 +37,7 @@ function getDocumentAndValidate(documentId, env = process.env) {
   const rootDir = path.resolve(env.DOC_ROOT_DIR || process.cwd());
   const resolvedPath = path.resolve(doc.file_path);
 
-  if (!resolvedPath.startsWith(rootDir)) {
+  if (!isPathInsideRoot(resolvedPath, rootDir)) {
     const err = new Error('PATH_OUTSIDE_ROOT');
     err.status = 403;
     throw err;
@@ -102,6 +104,28 @@ function parseCsvLine(line) {
   return values;
 }
 
+// Cleans one ExcelJS cell value into a plain string for JSON preview.
+// Handles rich text runs, formula results, hyperlinks and error cells —
+// ExcelJS returns objects for all of these instead of primitives.
+function cleanCellValue(v) {
+  if (v === null || v === undefined) return '';
+  if (v instanceof Date) return v.toISOString().split('T')[0];
+  if (typeof v === 'object') {
+    if (Array.isArray(v.richText)) return v.richText.map((rt) => rt.text || '').join('');
+    if (v.result !== undefined) return cleanCellValue(v.result);
+    if (v.text !== undefined) return cleanCellValue(v.text);
+    if (v.error !== undefined) return String(v.error);
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
+const MAX_PREVIEW_ROWS = 500;
+// Sentinel thrown to break out of ExcelJS's eachRow callback early —
+// eachRow has no native "stop" signal, and `return` inside its callback
+// only skips the current row while still visiting every remaining one.
+const STOP_ROW_ITERATION = Symbol('stop-row-iteration');
+
 /**
  * Get structured preview data for in-app viewing.
  */
@@ -118,8 +142,9 @@ async function getFilePreview(documentId, env = process.env) {
 
   const ext = (doc.file_ext || path.extname(doc.file_name).slice(1) || '').toLowerCase();
 
-  // Excel (.xlsx, .xls)
-  if (ext === 'xlsx' || ext === 'xls') {
+  // Excel (.xlsx, .xlsm). Legacy binary .xls is a different format that
+  // ExcelJS cannot parse — fail gracefully instead of throwing a 500.
+  if (ext === 'xlsx' || ext === 'xlsm') {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(resolvedPath);
     const sheets = [];
@@ -129,27 +154,29 @@ async function getFilePreview(documentId, env = process.env) {
       let headers = [];
       let rowIndex = 0;
 
-      worksheet.eachRow({ includeEmpty: false }, (row) => {
-        if (rowIndex > 500) return; // Limit to 500 rows
-        const rawValues = Array.isArray(row.values) ? row.values.slice(1) : [];
-        const cleanValues = rawValues.map((v) => {
-          if (v === null || v === undefined) return '';
-          if (typeof v === 'object') {
-            if (v.text) return String(v.text);
-            if (v.result !== undefined) return String(v.result);
-            if (v instanceof Date) return v.toISOString().split('T')[0];
-            return JSON.stringify(v);
+      try {
+        worksheet.eachRow({ includeEmpty: false }, (row) => {
+          // rowIndex 0 is the header; cap data rows at MAX_PREVIEW_ROWS.
+          if (rowIndex > MAX_PREVIEW_ROWS) {
+            throw STOP_ROW_ITERATION;
           }
-          return String(v);
-        });
+          // Array.isArray(row.values) is a sparse array where a fully-empty
+          // leading cell leaves a hole; Array.from() (unlike .slice()) fills
+          // holes with `undefined` so .map() below doesn't silently drop
+          // columns and shift every value after the gap.
+          const rawValues = Array.isArray(row.values) ? Array.from(row.values).slice(1) : [];
+          const cleanValues = rawValues.map(cleanCellValue);
 
-        if (rowIndex === 0) {
-          headers = cleanValues;
-        } else {
-          rows.push(cleanValues);
-        }
-        rowIndex++;
-      });
+          if (rowIndex === 0) {
+            headers = cleanValues;
+          } else {
+            rows.push(cleanValues);
+          }
+          rowIndex++;
+        });
+      } catch (e) {
+        if (e !== STOP_ROW_ITERATION) throw e;
+      }
 
       sheets.push({
         name: worksheet.name,
@@ -164,6 +191,17 @@ async function getFilePreview(documentId, env = process.env) {
       file_name: doc.file_name,
       file_size: stat.size,
       sheets
+    };
+  }
+
+  if (ext === 'xls') {
+    return {
+      type: 'unsupported',
+      file_name: doc.file_name,
+      file_size: stat.size,
+      ext,
+      error: 'Legacy .xls files cannot be previewed in-browser. Open the file directly instead.',
+      url: `/api/documents/${doc.id}/raw`
     };
   }
 

@@ -1,7 +1,13 @@
 // src/routes/scan.js
 const express = require('express');
+const path = require('path');
 const { scanDirectory, getScanStatus, scanEvents } = require('../modules/scanner');
+const env = require('../config/env');
 const router = express.Router();
+
+function normalizeForCompare(p) {
+  return process.platform === 'win32' || process.platform === 'darwin' ? p.toLowerCase() : p;
+}
 
 /**
  * POST /api/scan
@@ -13,10 +19,24 @@ router.post('/scan', async (req, res) => {
   if (!rootDir) {
     return res.status(400).json({ error: 'rootDir is required' });
   }
+
+  // Only allow scanning within the configured document root — otherwise an
+  // arbitrary caller could index (and later open/preview) any path on disk.
+  const resolvedRequested = path.resolve(rootDir);
+  const resolvedAllowedRoot = path.resolve(env.DOC_ROOT_DIR);
+  const a = normalizeForCompare(resolvedRequested);
+  const b = normalizeForCompare(resolvedAllowedRoot);
+  if (a !== b && !a.startsWith(b + path.sep)) {
+    return res.status(403).json({ error: 'rootDir must be inside the configured DOC_ROOT_DIR' });
+  }
+
   try {
     const result = await scanDirectory(rootDir, ignorePatterns || []);
     res.json({ scan_id: result.scanId, status: 'completed', result });
   } catch (err) {
+    if (err.message === 'SCAN_ALREADY_RUNNING') {
+      return res.status(409).json({ error: 'A scan is already running' });
+    }
     res.status(500).json({ error: err.message });
   }
 });

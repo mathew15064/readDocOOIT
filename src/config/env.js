@@ -18,5 +18,16 @@ if (isNaN(port)) {
 module.exports = {
   DOC_ROOT_DIR: path.resolve(process.env.DOC_ROOT_DIR),
   PORT: port,
-  PLATFORM_MODE: process.env.PLATFORM_MODE || 'auto'
+  PLATFORM_MODE: process.env.PLATFORM_MODE || 'auto',
+  // Defaults to loopback only: this app has no auth, and a route can trigger
+  // `git pull` or open arbitrary files under DOC_ROOT_DIR. Set HOST=0.0.0.0
+  // explicitly to expose it on the LAN.
+  HOST: process.env.HOST || '127.0.0.1',
+  // Optional. When set, `git pull` (POST /api/sync) authenticates with this
+  // token instead of relying on whatever credential helper / SSH key is
+  // already configured for the repo. GIT_USERNAME defaults to
+  // 'x-access-token' (the convention for a GitHub PAT); most providers
+  // accept any non-empty username alongside a PAT used as the password.
+  GIT_TOKEN: process.env.GIT_TOKEN || null,
+  GIT_USERNAME: process.env.GIT_USERNAME || 'x-access-token'
 };

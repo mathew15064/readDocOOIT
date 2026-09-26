@@ -18,8 +18,11 @@ function searchDocuments({ q = '', module = '', only_latest = false, page = 1, p
   const params = {};
 
   if (q && q.trim() !== '') {
-    conditions.push('(file_name LIKE @q OR base_name LIKE @q OR doc_type LIKE @q OR file_path LIKE @q)');
-    params.q = `%${q.trim()}%`;
+    // Escape LIKE wildcards in user input so typing "%" or "_" filters
+    // literally instead of matching any/one character.
+    const escaped = q.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+    conditions.push("(file_name LIKE @q ESCAPE '\\' OR base_name LIKE @q ESCAPE '\\' OR doc_type LIKE @q ESCAPE '\\' OR file_path LIKE @q ESCAPE '\\')");
+    params.q = `%${escaped}%`;
   }
 
   if (module && module.trim() !== '') {

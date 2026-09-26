@@ -103,10 +103,17 @@ async function updateGroup(id, { name, description, color, sort_order }) {
  * @param {number|string} id
  * @returns {Promise<{deleted: true}>}
  */
-async function deleteGroup(id) {
+const deleteGroupTx = db.transaction((id) => {
   // Explicitly delete bookmark_items in case foreign keys pragma is not active in any test environment
   db.prepare('DELETE FROM bookmark_items WHERE group_id = ?').run(id);
-  db.prepare('DELETE FROM bookmark_groups WHERE id = ?').run(id);
+  return db.prepare('DELETE FROM bookmark_groups WHERE id = ?').run(id);
+});
+
+async function deleteGroup(id) {
+  const info = deleteGroupTx(id);
+  if (info.changes === 0) {
+    throw new Error('GROUP_NOT_FOUND');
+  }
   return { deleted: true };
 }
 

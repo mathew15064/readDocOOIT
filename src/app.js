@@ -2,6 +2,7 @@
 const express = require('express');
 const path = require('path');
 const logger = require('./middleware/request-logger');
+const sameOrigin = require('./middleware/same-origin');
 const openerRouter = require('./modules/opener/opener.routes');
 const errorHandler = require('./middleware/error-handler');
 
@@ -17,6 +18,7 @@ const app = express();
 
 app.use(express.json());
 app.use(logger);
+app.use('/api', sameOrigin);
 
 // Health endpoint
 app.get('/health', (req, res) => {
