@@ -15,8 +15,9 @@ function parseFilename(fileName) {
   const file_ext = extMatch ? extMatch[1] : '';
   const nameWithoutExt = extMatch ? fileName.slice(0, -file_ext.length - 1) : fileName;
 
-  // Regex to capture version and date: look for _V<number>_<yyyymmdd>
-  const versionRegex = /_V(\d+)_?(\d{8})?/i;
+  // Match a version at the end of the stem. A trailing _2, _3, etc. is
+  // a duplicate-file suffix, not part of the document's logical identity.
+  const versionRegex = /_V(\d+)(?:_(\d{8}))?(?:_\d+)?$/i;
   const match = nameWithoutExt.match(versionRegex);
 
   let version_num = null;
