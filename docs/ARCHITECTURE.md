@@ -28,7 +28,7 @@
 - **ADR-002: Open files via OS default application**: Use OS default application associations via `child_process.spawn` (never `exec`). Rationale: User only needs one way to open files without selecting an application.
 - **ADR-003: Regex-Based Version Parser**: Regex `/_V(\d+)_(\d{8})/`. Store `version_num` (INT) and `version_date` (TEXT YYYY-MM-DD).
 - **ADR-004: `is_latest` Computed at Scan Time**: Group by `(module_path, base_name_without_version)`. Mark only the highest `version_num` + newest `version_date` as `is_latest=1`.
-- **ADR-005: Path Traversal Guard**: Reject any `path.resolve(filePath)` that does not start with `path.resolve(DOC_ROOT_DIR)`.
+- **ADR-005: Path Traversal Guard**: Restrict file API/scan paths using segment-safe `path.relative` checks on both resolved paths and real paths. This rejects sibling-directory prefix collisions and symlink escapes that a simple `startsWith` check misses. The unauthenticated local server binds only `127.0.0.1`.
 - **ADR-006: Toast Notifications over Browser Alerts**: Standalone `public/js/toast.js` with stacking, auto-dismiss, and type-based colors.
 - **ADR-007: SSE for Scan Progress**: `POST /api/scan` returns `scan_id` immediately. Progress is streamed via `GET /api/scan/:id/stream`.
 - **ADR-008: Client-Side Search on Small Datasets**: Load all documents once, filter client-side with Alpine.js computed properties.

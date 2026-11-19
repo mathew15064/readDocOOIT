@@ -1,6 +1,9 @@
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const path = require('path');
 const fs = require('fs');
+const { resolveWithinRoot } = require('../../utils/path-guard');
 
 /**
  * Open a file using the OS default application.
@@ -9,12 +12,7 @@ const fs = require('fs');
  * @returns {Promise<{opened: true, filePath: string}>}
  */
 async function openFile(filePath, env) {
-  const resolved = path.resolve(filePath);
-
-  // Path traversal guard
-  if (!resolved.startsWith(path.resolve(env.DOC_ROOT_DIR))) {
-    throw new Error('PATH_OUTSIDE_ROOT');
-  }
+  const resolved = await resolveWithinRoot(filePath, env.DOC_ROOT_DIR);
 
   // File must exist and be a file (not folder)
   const stat = await fs.promises.stat(resolved);
@@ -51,11 +49,7 @@ async function openFile(filePath, env) {
 // @param {object} env - validated env object
 // @returns {Promise<{opened:true, openerId:string, path:string}>}
 async function openWith(filePath, opener, env) {
-  const resolved = path.resolve(filePath);
-  // Path traversal guard
-  if (!resolved.startsWith(path.resolve(env.DOC_ROOT_DIR))) {
-    throw new Error('PATH_OUTSIDE_ROOT');
-  }
+  const resolved = await resolveWithinRoot(filePath, env.DOC_ROOT_DIR);
   const stat = await fs.promises.stat(resolved);
   if (!stat.isFile()) {
     throw new Error('NOT_A_FILE');
@@ -67,7 +61,7 @@ async function openWith(filePath, opener, env) {
 
   // WSL Windows path handling
   if (opener.pathStrategy === 'windows' && require('./wsl-helper').detectWSL()) {
-    const { path: winPath } = require('./wsl-helper').convertToWindowsPath(resolved);
+    const { path: winPath } = await require('./wsl-helper').convertToWindowsPath(resolved);
     args = opener.args.map(a => a === '{file}' ? winPath : a);
   }
 
@@ -86,12 +80,9 @@ async function openWith(filePath, opener, env) {
 async function revealInFolder(filePath, env) {
   const path = require('path');
   const fs = require('fs');
-  const { spawn, execSync } = require('child_process');
+  // Reuse the argument-safe async process helpers defined above.
 
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(env.DOC_ROOT_DIR))) {
-    throw new Error('PATH_OUTSIDE_ROOT');
-  }
+  const resolved = await resolveWithinRoot(filePath, env.DOC_ROOT_DIR);
   const stat = await fs.promises.stat(resolved);
   if (!stat.isFile()) throw new Error('NOT_A_FILE');
 
@@ -127,7 +118,8 @@ async function revealInFolder(filePath, env) {
 
     if (mountMatch) {
       try {
-        const winPath = execSync(`wslpath -w "${resolved}"`, { encoding: 'utf8' }).trim();
+        const { stdout } = await execFileAsync('wslpath', ['-w', resolved], { encoding: 'utf8' });
+        const winPath = stdout.trim();
         cmd = 'explorer.exe';
         args = [`/select,"${winPath}"`];
         targetPath = winPath;

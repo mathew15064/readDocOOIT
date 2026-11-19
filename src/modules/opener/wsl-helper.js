@@ -2,7 +2,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execSync } = require('child_process');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 // Cache WSL detection result
 let _isWSL = null;
@@ -10,7 +12,6 @@ function detectWSL() {
   const mode = process.env.PLATFORM_MODE || 'auto';
   if (mode === 'wsl') return true;
   if (mode === 'windows') return false;
-  // auto detection (cached)
   if (_isWSL !== null) return _isWSL;
   if (process.platform !== 'linux') {
     _isWSL = false;
@@ -25,42 +26,44 @@ function detectWSL() {
   return _isWSL;
 }
 
-// Convert a Linux file path to a Windows path according to the strategy
-// Returns { path: <WindowsPath>, tempCopied: boolean }
-function convertToWindowsPath(filePath) {
+// Convert Linux paths to Windows paths without evaluating filenames in a shell.
+async function convertToWindowsPath(filePath) {
   if (!detectWSL()) {
     return { path: filePath, tempCopied: false };
   }
-  // If path already on a mounted drive, use wslpath
+  async function toWindowsPath(target) {
+    const { stdout } = await execFileAsync('wslpath', ['-w', target], { encoding: 'utf8' });
+    return stdout.trim();
+  }
+
   if (/^\/mnt\/[a-z]\//.test(filePath)) {
     try {
-      const winPath = execSync(`wslpath -w '${filePath}'`).toString().trim();
-      return { path: winPath, tempCopied: false };
-    } catch (e) {
-      // fallback to copy
+      return { path: await toWindowsPath(filePath), tempCopied: false };
+    } catch (err) {
+      // Fall back to the Windows temp copy if the mount cannot be converted.
     }
   }
-  // Otherwise copy to a temp folder on the Windows side
+
   const tempDir = '/mnt/c/temp/doc-reader';
-  try {
-    fs.mkdirSync(tempDir, { recursive: true });
-  } catch (e) {}
-  const stat = fs.statSync(filePath);
+  await fs.promises.mkdir(tempDir, { recursive: true });
+  const stat = await fs.promises.stat(filePath);
   const hash = crypto.createHash('sha1')
     .update(filePath + ':' + stat.mtimeMs)
     .digest('hex')
     .slice(0, 12);
-  const safeBase = path.basename(filePath).replace(/[\/]/g, '_').replace(/^\.+/, '_');
+  const safeBase = path.basename(filePath).replace(/[\\/]/g, '_').replace(/^\.+/, '_');
   const tempName = `${hash}-${safeBase}`;
   const destPath = path.posix.join(tempDir, tempName);
-  // Copy only if not already present
-  if (!fs.existsSync(destPath)) {
-    fs.copyFileSync(filePath, destPath);
+
+  try {
+    await fs.promises.copyFile(filePath, destPath, fs.constants.COPYFILE_EXCL);
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
   }
-  const winPath = execSync(`wslpath -w '${destPath}'`).toString().trim();
-  return { path: winPath, tempCopied: true };
+  return { path: await toWindowsPath(destPath), tempCopied: true };
 }
 
+// Called on server startup; separate from user requests.
 function cleanupOldTempFiles(maxAgeMs = 24 * 60 * 60 * 1000) {
   if (!detectWSL()) return;
   const tempDir = '/mnt/c/temp/doc-reader';
@@ -68,7 +71,7 @@ function cleanupOldTempFiles(maxAgeMs = 24 * 60 * 60 * 1000) {
   try {
     files = fs.readdirSync(tempDir);
   } catch (e) {
-    return; // nothing to clean
+    return;
   }
   const now = Date.now();
   files.forEach(f => {

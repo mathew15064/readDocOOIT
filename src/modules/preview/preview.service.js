@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const db = require('../../db');
+const { resolveWithinRoot } = require('../../utils/path-guard');
 
 const MIME_MAP = {
   pdf: 'application/pdf',
@@ -24,7 +25,7 @@ const MIME_MAP = {
 /**
  * Validates document and path traversal security.
  */
-function getDocumentAndValidate(documentId, env = process.env) {
+async function getDocumentAndValidate(documentId, env = process.env) {
   const doc = db.prepare('SELECT id, file_path, file_name, file_ext, doc_type, file_size FROM documents WHERE id = ?').get(documentId);
   if (!doc) {
     const err = new Error('DOC_NOT_FOUND');
@@ -33,17 +34,16 @@ function getDocumentAndValidate(documentId, env = process.env) {
   }
 
   const rootDir = path.resolve(env.DOC_ROOT_DIR || process.cwd());
-  const resolvedPath = path.resolve(doc.file_path);
-
-  if (!resolvedPath.startsWith(rootDir)) {
-    const err = new Error('PATH_OUTSIDE_ROOT');
-    err.status = 403;
-    throw err;
-  }
-
-  if (!fs.existsSync(resolvedPath)) {
-    const err = new Error('FILE_NOT_FOUND');
-    err.status = 404;
+  let resolvedPath;
+  try {
+    resolvedPath = await resolveWithinRoot(doc.file_path, rootDir);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      const missing = new Error('FILE_NOT_FOUND');
+      missing.status = 404;
+      throw missing;
+    }
+    if (err.message === 'PATH_OUTSIDE_ROOT') err.status = 403;
     throw err;
   }
 
@@ -54,7 +54,7 @@ function getDocumentAndValidate(documentId, env = process.env) {
  * Get raw file stream with content type and filename headers.
  */
 async function getFileRaw(documentId, env = process.env) {
-  const { doc, resolvedPath } = getDocumentAndValidate(documentId, env);
+  const { doc, resolvedPath } = await getDocumentAndValidate(documentId, env);
   const stat = await fs.promises.stat(resolvedPath);
   if (!stat.isFile()) {
     const err = new Error('NOT_A_FILE');
@@ -106,7 +106,7 @@ function parseCsvLine(line) {
  * Get structured preview data for in-app viewing.
  */
 async function getFilePreview(documentId, env = process.env) {
-  const { doc, resolvedPath } = getDocumentAndValidate(documentId, env);
+  const { doc, resolvedPath } = await getDocumentAndValidate(documentId, env);
   const stat = await fs.promises.stat(resolvedPath);
 
   // Maximum file size limit (15MB)

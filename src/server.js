@@ -6,7 +6,8 @@ const { PORT } = require('./config/env');
 
 const server = http.createServer(app);
 
-server.listen(PORT, () => {
+// This app has no authentication; do not expose its file APIs on the LAN.
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`Server listening on port ${PORT}`);
   cleanupOldTempFiles(); // cleanup stale temp files on startup
 });

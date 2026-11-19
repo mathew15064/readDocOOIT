@@ -19,12 +19,19 @@
 - [x] **Phase 9 – Tooling + Docs + Makefile**: `npm run shots` (20 Playwright screenshots), `scripts/verify-responsive.mjs` (7 viewports), Makefile with first-time setup + common tasks, README rewrite with install guide, screenshot workflow rule in WORKFLOW.md.
 
 ### Test Status
-- Unit: 51/51 pass
-- Integration: 20/20 pass
-- E2E (Playwright verify-task5 & verify-responsive): 7/7 viewports pass
+- Unit: 56/56 pass (2026-11-19, isolated Node.js 22 test environment).
+- Integration: 23/23 pass (2026-11-19, in-memory SQLite).
+- E2E (Playwright verify-task5 & verify-responsive): 7/7 viewports passed in the earlier phase; repeat before release.
 
 ### Active Blockers
-None.
+- Production index contains missing/stale document paths; reconcile separately with a verified database backup. Do not delete records as part of the scan safety fix.
+- The application is not yet deployed/running on port 3081; validate WSL Windows app launch in the real desktop environment.
+
+### 2026-11-19 — Data safety / path hardening (code branch)
+- Scanner upserts metadata without replacing document IDs, preserving bookmark/tag relations.
+- File open/reveal/preview and scan API now validate real filesystem containment, including symlink and sibling-prefix escapes.
+- WSL conversion no longer evaluates document filenames in a shell; server restricted to localhost.
+- Fixes developed on `fix/scan-safety-20261119` for review; no production database changes or service restart.
 
 ### Next Steps (future work)
 - Outdated bookmark detection (already partially implemented — verify in prod).

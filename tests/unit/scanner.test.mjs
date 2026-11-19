@@ -87,4 +87,24 @@ describe('scanDirectory integration', () => {
     const jsonRows = db.prepare("SELECT * FROM documents WHERE file_name = 'metadata.json'").all();
     expect(jsonRows.length).toBe(0);
   });
+
+  test('rescans without losing document ID, bookmarks or tags', async () => {
+    await scanDirectory(tempDir);
+    const filePath = path.join(tempDir, 'Doc_V1_20220101.txt');
+    const before = db.prepare('SELECT id, file_size FROM documents WHERE file_path = ?').get(filePath);
+    const groupId = db.prepare("INSERT INTO bookmark_groups(name) VALUES ('rescan-test-group')").run().lastInsertRowid;
+    const tagId = db.prepare("INSERT INTO tags(name) VALUES ('rescan-test-tag')").run().lastInsertRowid;
+    db.prepare('INSERT INTO bookmark_items(group_id, document_id) VALUES (?, ?)').run(groupId, before.id);
+    db.prepare('INSERT INTO document_tags(document_id, tag_id) VALUES (?, ?)').run(before.id, tagId);
+
+    fs.writeFileSync(filePath, 'updated document with a new size');
+    const rescan = await scanDirectory(tempDir);
+    const after = db.prepare('SELECT id, file_size FROM documents WHERE file_path = ?').get(filePath);
+
+    expect(rescan.errors).toEqual([]);
+    expect(after.id).toBe(before.id);
+    expect(after.file_size).not.toBe(before.file_size);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM bookmark_items WHERE document_id = ?').get(before.id).n).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM document_tags WHERE document_id = ?').get(before.id).n).toBe(1);
+  });
 });
