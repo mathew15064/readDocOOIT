@@ -1,23 +1,22 @@
 # Module: Git Sync
+
 ## Purpose
-Triggers local Git repository sync (`git pull`) and auto-rescans document directory.
+Synchronize the configured document repository and refresh the index **only when new commits arrive**.
 
-## Public API
-`gitPull(repoDir)`
+## Endpoint
+`POST /api/sync` returns:
+- `{status: "ok", changed: false, scanStatus: "skipped", output: "..."}` when Git is already current (no expensive scan).
+- `{status: "ok", changed: true, scanStatus: "completed", filesIndexed, output}` after a successful fast-forward pull and scan.
+- `{status: "partial", changed: true, scanStatus: "completed_with_errors", errors, filesIndexed, output}` if Git updated but indexing had file errors.
+- HTTP 500 with an error message if Git fails.
 
-## Dependencies
-`child_process.spawn`, `src/config/env.js`, `src/modules/scanner`
-
-## Endpoints
-`POST /api/sync`
-
-## Security & ADRs
-- ADR-010: Git Pull via `spawn`, Not `exec`: `spawn('git', ['pull'], { cwd: DOC_GIT_REPO })`.
-
-## Edge Cases
-- Non-git directory or git not installed.
-- Network error during pull.
+## Safety
+- Pulls only with `git pull --ff-only` so divergent branches or local commits are not silently rebased/merged.
+- Uses `GIT_TERMINAL_PROMPT=0` and a 60-second Git command timeout so the HTTP request cannot hang on interactive authentication.
+- Concurrent sync requests share the same in-flight operation.
+- Preserves bookmark/tag links during scan through the scanner's SQLite upsert.
+- Does not delete stale database records. No real-data migration or cleanup.
+- Document repository is configured by `DOC_ROOT_DIR`, not the application source Git repository.
 
 ## Tests
-- Mock `spawn` for `git pull`.
-- Verify auto-rescan triggering.
+- Isolated local bare Git remote, clone, no-op sync, new commit, pull and index, repeated no-op sync.
