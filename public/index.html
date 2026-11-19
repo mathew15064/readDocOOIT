@@ -1304,8 +1304,8 @@
   </div>
 
   <!-- [#] Bookmark Group Full View Modal (Sub-Task 5.4 - ADR-009 / ADR-020) -->
-  <div x-show="showGroupDetailModal" @keydown.window.escape="showGroupDetailModal = false" class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" style="display: none;">
-    <div class="bg-surface-card border border-hairline-strong w-full max-w-7xl p-6 rounded-xl shadow-2xl z-[201] space-y-4 max-h-[90vh] flex flex-col" style="background-color: #1e2329;" @click.stop>
+  <div x-show="showGroupDetailModal" @keydown.window.escape="showGroupDetailModal = false" class="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-3 bg-black/70 backdrop-blur-sm" style="display: none;">
+    <div class="bg-surface-card border border-hairline-strong w-full p-3 sm:p-5 rounded-xl shadow-2xl z-[201] space-y-3 max-h-[97vh] flex flex-col min-w-0" style="background-color: #1e2329; max-width: min(98vw, 1920px);" @click.stop>
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-hairline pb-4 flex-shrink-0">
         <div class="flex items-center space-x-2.5 min-w-0 pr-4">
@@ -1354,8 +1354,8 @@
       </div>
 
       <!-- Items Table -->
-      <div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto scrollbar-thin rounded-lg border border-hairline bg-surface-card">
-        <table class="w-full table-fixed">
+      <div class="flex-1 min-h-0 overflow-x-auto lg:overflow-x-hidden overflow-y-auto scrollbar-thin rounded-lg border border-hairline bg-surface-card">
+        <table class="w-full table-fixed" style="min-width: 980px;">
           <thead class="bg-surface-elevated text-muted uppercase text-xs tracking-wider border-b border-hairline">
             <tr>
               <th class="p-3 w-10 text-center">
@@ -1366,18 +1366,17 @@
                   @change="toggleSelectAllGroupDetail($event.target.checked)" 
                 />
               </th>
-              <th class="px-3 py-3 min-w-0">Name</th>
-              <th class="px-3 py-3 w-28 whitespace-nowrap">Version</th>
-              <th class="px-3 py-3 w-28 whitespace-nowrap">Doc Date</th>
-              <th class="px-3 py-3 w-24 whitespace-nowrap hidden lg:table-cell">Added</th>
-              <th class="px-3 py-3 w-32">Note</th>
-              <th class="px-3 py-3 w-72 text-right whitespace-nowrap">Actions</th>
+              <th class="px-2 py-3 min-w-0">Name</th>
+              <th class="px-2 py-3 w-36 whitespace-nowrap">Version / Status</th>
+              <th class="px-2 py-3 w-28 whitespace-nowrap">Doc Date</th>
+              <th class="px-2 py-3 w-32">Note</th>
+              <th class="px-2 py-3 w-64 text-right whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <template x-for="group in groupedGroupDetailItems()" :key="group.key">
             <tbody class="divide-y divide-hairline bg-surface-card">
               <tr class="bg-surface-elevated border-y border-hairline-strong cursor-pointer hover:bg-surface-soft" @click="toggleGroupDetailCollapse(group.key)">
-                <td colspan="7" class="px-4 py-2.5">
+                <td colspan="6" class="px-4 py-2.5">
                   <div class="flex items-center gap-3 text-xs">
                     <span class="text-primary font-bold" x-text="collapsedGroupDetailKeys.includes(group.key) ? '▸' : '▾'"></span>
                     <span class="text-white font-semibold" x-text="group.label"></span>
@@ -1414,22 +1413,23 @@
                     </div>
                   </template>
                 </td>
-                <td class="px-3 py-2.5 whitespace-nowrap">
+                <td class="px-2 py-2.5 whitespace-nowrap">
+                  <div class="flex items-center gap-1.5">
                   <span 
-                    class="text-[14px] px-2 py-0.5 rounded-sm leading-[2] font-mono border border-hairline"
+                    class="text-[12px] px-2 py-0.5 rounded-sm leading-[2] font-mono border border-hairline"
                     :class="item.document?.version_num ? 'bg-surface-card text-body' : 'bg-surface-soft text-muted'"
                     x-text="item.document?.version_num ? `V${item.document.version_num}` : 'N/A'">
                   </span>
                   <template x-if="item.document.is_latest === 1">
-                    <span class="bg-success/15 text-success border border-success/40 text-[14px] px-2 py-0.5 rounded-sm leading-[2] font-bold uppercase ml-1">LATEST</span>
+                    <span class="bg-success/15 text-success border border-success/40 text-[10px] px-1.5 py-0.5 rounded-sm font-bold uppercase">LATEST</span>
                   </template>
                   <template x-if="item.is_outdated">
-                    <span class="bg-warning/15 text-warning border border-warning/40 text-[10px] font-bold px-1.5 py-0.5 rounded-sm uppercase ml-1">OUTDATED</span>
+                    <span class="bg-warning/15 text-warning border border-warning/40 text-[10px] font-bold px-1.5 py-0.5 rounded-sm uppercase">OUTDATED</span>
                   </template>
+                  </div>
                 </td>
-                <td class="px-3 py-2.5 whitespace-nowrap text-body font-mono text-[12px]" x-text="formatDocVersionDate(item.document?.version_date)" :title="item.document?.version_date || ''"></td>
-                <td class="px-3 py-2.5 whitespace-nowrap text-muted font-sans text-[11px] hidden lg:table-cell" x-text="item.item_created_at ? formatDate(item.item_created_at) : '—'"></td>
-                <td class="px-3 py-2.5">
+                <td class="px-2 py-2.5 whitespace-nowrap text-body font-mono text-[12px]" x-text="formatDocVersionDate(item.document?.version_date)" :title="item.document?.version_date || ''"></td>
+                <td class="px-2 py-2.5">
                   <div class="group/note relative">
                     <input 
                       type="text" 
@@ -1437,17 +1437,17 @@
                       @blur="saveItemNoteInline(item.item_id, $event.target.value)"
                       @keydown.enter="$event.target.blur()"
                       placeholder="Add note..." 
-                      class="bg-surface-card border border-hairline rounded-md px-2 py-1 text-muted text-[12px] focus:outline-none focus:border-primary" 
+                      class="w-full min-w-0 bg-surface-card border border-hairline rounded-md px-2 py-1 text-muted text-[12px] focus:outline-none focus:border-primary"
                     />
                   </div>
                 </td>
-                <td class="px-3 py-2.5 text-right whitespace-nowrap">
-                  <div class="inline-flex items-center gap-1.5">
+                <td class="px-2 py-2.5 text-right whitespace-nowrap">
+                  <div class="inline-flex items-center gap-1">
                     <!-- Preview -->
                     <button @click="openPreviewModal(item.document)"
                             class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface-card hover:bg-surface-elevated text-body border border-hairline font-sans text-[11px] transition"
                             title="Preview in browser">
-                      <span class="font-mono">[!]</span><span class="hidden xl:inline"> Preview</span>
+                      <span class="font-mono">[!]</span><span class="hidden 2xl:inline"> Preview</span>
                     </button>
 
                     <!-- Split Open Button — compact, no dropdown overlap -->
@@ -1484,14 +1484,14 @@
                     <button @click="revealDocument(item.document)"
                             class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface-card hover:bg-surface-elevated text-body border border-hairline font-sans text-[11px] transition"
                             title="Reveal in folder">
-                      <span class="font-mono">[~]</span><span class="hidden xl:inline"> Reveal</span>
+                      <span class="font-mono">[~]</span><span class="hidden 2xl:inline"> Reveal</span>
                     </button>
 
                     <!-- Remove -->
                     <button @click="removeItemFromGroup(item.item_id, selectedGroupDetail.id)"
                             class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-danger/15 text-danger border border-danger/40 hover:bg-danger/25 font-sans text-[11px] transition"
                             title="Remove from group">
-                      <span class="font-mono">[x]</span><span class="hidden xl:inline"> Remove</span>
+                      <span class="font-mono">[x]</span><span class="hidden 2xl:inline"> Remove</span>
                     </button>
                   </div>
                 </td>
@@ -1501,7 +1501,7 @@
           </template>
           <tbody>
             <tr x-show="filteredSortedGroupDetailItems().length === 0">
-              <td colspan="7" class="p-8 text-center text-muted text-xs">
+              <td colspan="6" class="p-8 text-center text-muted text-xs">
                 No items match criteria.
               </td>
             </tr>
