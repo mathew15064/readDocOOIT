@@ -2866,8 +2866,16 @@
           try {
             const res = await fetch('/api/sync', { method: 'POST' });
             const data = await res.json();
-            if (res.ok) {
-              showToast('Git sync succeeded!', 'success');
+            if (res.ok && data.status === 'ok') {
+              if (!data.changed) {
+                showToast('Git is already up to date. No rescan needed.', 'success');
+              } else {
+                showToast(`Git sync complete: ${data.filesIndexed || 0} files indexed`, 'success');
+                await this.loadModules();
+                await this.loadDocuments();
+              }
+            } else if (res.ok && data.status === 'partial') {
+              showToast('Git updated, but some files could not be indexed. Check scan logs.', 'warning');
               await this.loadModules();
               await this.loadDocuments();
             } else {
