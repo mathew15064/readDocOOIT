@@ -135,9 +135,20 @@ async function scanDirectory(rootDir, ignorePatterns = [], progressCallback) {
           const stats = await fs.stat(fullPath);
           const parsed = parseFilename(entry.name);
           const stmt = db.prepare(`
-            INSERT OR REPLACE INTO documents 
-            (file_path, file_name, file_ext, file_size, mtime, version_num, version_date, module_path, doc_type, base_name, indexed_at) 
+            INSERT INTO documents
+            (file_path, file_name, file_ext, file_size, mtime, version_num, version_date, module_path, doc_type, base_name, indexed_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(file_path) DO UPDATE SET
+              file_name = excluded.file_name,
+              file_ext = excluded.file_ext,
+              file_size = excluded.file_size,
+              mtime = excluded.mtime,
+              version_num = excluded.version_num,
+              version_date = excluded.version_date,
+              module_path = excluded.module_path,
+              doc_type = excluded.doc_type,
+              base_name = excluded.base_name,
+              indexed_at = excluded.indexed_at
           `);
           stmt.run(
             fullPath,
