@@ -1337,6 +1337,8 @@
               <option value="added">Added (newest)</option>
             </select>
           </div>
+          <button @click="collapsedGroupDetailKeys = []" class="text-primary hover:underline whitespace-nowrap" title="Expand all document groups">Expand all</button>
+          <button @click="collapsedGroupDetailKeys = groupedGroupDetailItems().map(g => g.key)" class="text-muted hover:text-white whitespace-nowrap" title="Collapse all document groups">Collapse all</button>
           <!-- Filter dropdown -->
           <div class="flex items-center space-x-1">
             <span class="text-muted">Filter:</span>
@@ -1364,16 +1366,28 @@
                   @change="toggleSelectAllGroupDetail($event.target.checked)" 
                 />
               </th>
-              <th class="px-3 py-3 min-w-0 w-[22%]">Name</th>
-              <th class="px-3 py-3 w-24 whitespace-nowrap">Version</th>
-              <th class="px-3 py-3 w-16 whitespace-nowrap hidden md:table-cell">Added</th>
-              <th class="px-3 py-3 w-36">Note</th>
-              <th class="px-3 py-3 w-80 text-right whitespace-nowrap">Actions</th>
+              <th class="px-3 py-3 min-w-0">Name</th>
+              <th class="px-3 py-3 w-28 whitespace-nowrap">Version</th>
+              <th class="px-3 py-3 w-28 whitespace-nowrap">Doc Date</th>
+              <th class="px-3 py-3 w-24 whitespace-nowrap hidden lg:table-cell">Added</th>
+              <th class="px-3 py-3 w-32">Note</th>
+              <th class="px-3 py-3 w-72 text-right whitespace-nowrap">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-hairline bg-surface-card">
-            <template x-for="item in filteredSortedGroupDetailItems()" :key="item.item_id">
-              <tr class="bg-surface-card hover:bg-surface-elevated border-b border-hairline transition-colors" 
+          <template x-for="group in groupedGroupDetailItems()" :key="group.key">
+            <tbody class="divide-y divide-hairline bg-surface-card">
+              <tr class="bg-surface-elevated border-y border-hairline-strong cursor-pointer hover:bg-surface-soft" @click="toggleGroupDetailCollapse(group.key)">
+                <td colspan="7" class="px-4 py-2.5">
+                  <div class="flex items-center gap-3 text-xs">
+                    <span class="text-primary font-bold" x-text="collapsedGroupDetailKeys.includes(group.key) ? '▸' : '▾'"></span>
+                    <span class="text-white font-semibold" x-text="group.label"></span>
+                    <span class="text-muted" x-text="`(${group.items.length} versions)`"></span>
+                    <span class="text-muted font-mono ml-auto" x-text="group.latestDate ? `Newest: ${formatDocVersionDate(group.latestDate)}` : ''"></span>
+                  </div>
+                </td>
+              </tr>
+              <template x-for="item in group.items" :key="item.item_id">
+              <tr x-show="!collapsedGroupDetailKeys.includes(group.key)" class="bg-surface-card hover:bg-surface-elevated border-b border-hairline transition-colors"
                 @contextmenu.prevent="openBookmarkMenu($event, item, selectedGroupDetail)">
                 <td class="p-3 text-center">
                   <input 
@@ -1413,7 +1427,8 @@
                     <span class="bg-warning/15 text-warning border border-warning/40 text-[10px] font-bold px-1.5 py-0.5 rounded-sm uppercase ml-1">OUTDATED</span>
                   </template>
                 </td>
-                <td class="px-3 py-2.5 whitespace-nowrap text-muted font-sans text-[11px] hidden sm:table-cell" x-text="item.created_at ? formatDate(item.created_at) : '—'"></td>
+                <td class="px-3 py-2.5 whitespace-nowrap text-body font-mono text-[12px]" x-text="formatDocVersionDate(item.document?.version_date)" :title="item.document?.version_date || ''"></td>
+                <td class="px-3 py-2.5 whitespace-nowrap text-muted font-sans text-[11px] hidden lg:table-cell" x-text="item.item_created_at ? formatDate(item.item_created_at) : '—'"></td>
                 <td class="px-3 py-2.5">
                   <div class="group/note relative">
                     <input 
@@ -1481,9 +1496,12 @@
                   </div>
                 </td>
               </tr>
-            </template>
+              </template>
+            </tbody>
+          </template>
+          <tbody>
             <tr x-show="filteredSortedGroupDetailItems().length === 0">
-              <td colspan="6" class="p-8 text-center text-muted text-xs">
+              <td colspan="7" class="p-8 text-center text-muted text-xs">
                 No items match criteria.
               </td>
             </tr>
@@ -3076,6 +3094,7 @@
           this.groupDetailSort = 'name';
           this.groupDetailFilter = 'all';
           this.selectedGroupDetailItemIds = [];
+          this.collapsedGroupDetailKeys = [];
           this.showGroupDetailModal = true;
           this.loadGroupDetailItems(group.id);
         },
@@ -3089,6 +3108,42 @@
             console.error(e);
             this.groupDetailItems = [];
           }
+        },
+
+        formatDocVersionDate(value) {
+          if (!value) return '—';
+          const digits = String(value).replace(/-/g, '');
+          if (!/^\d{8}$/.test(digits)) return String(value);
+          return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
+        },
+
+        toggleGroupDetailCollapse(key) {
+          if (this.collapsedGroupDetailKeys.includes(key)) {
+            this.collapsedGroupDetailKeys = this.collapsedGroupDetailKeys.filter(k => k !== key);
+          } else {
+            this.collapsedGroupDetailKeys.push(key);
+          }
+        },
+
+        groupedGroupDetailItems() {
+          const groups = new Map();
+          for (const item of this.filteredSortedGroupDetailItems()) {
+            const doc = item.document || {};
+            const key = JSON.stringify([doc.module_path || '', doc.base_name || doc.file_name || '']);
+            if (!groups.has(key)) {
+              const base = doc.base_name || doc.file_name || 'Unknown document';
+              let label = base;
+              if (/^Func Spec Doc_/i.test(base)) label = 'Functional Specification';
+              else if (/^Design Doc_Admin Function_/i.test(base)) label = 'Screen Design';
+              else if (/Data Mapping/i.test(base)) label = 'Business Design · Data Mapping';
+              else if (/^Design Doc_Business/i.test(base)) label = 'Business Design';
+              groups.set(key, { key, label, items: [], latestDate: '' });
+            }
+            const group = groups.get(key);
+            group.items.push(item);
+            if ((doc.version_date || '') > group.latestDate) group.latestDate = doc.version_date;
+          }
+          return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label));
         },
 
         filteredSortedGroupDetailItems() {
